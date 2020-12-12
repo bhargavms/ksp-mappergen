@@ -34,20 +34,26 @@ fun MapFunctionDeclaration.generate(
 
 internal interface MapFunctionResolver {
     fun resolveRequiredMapFunction(mapFunctionDeclaration: MapFunctionDeclaration)
+}
 
+internal interface CollectionTypeCheckHelper {
     fun isIterable(type: KSType): Boolean
 
     fun isArray(type: KSType): Boolean
 }
+
 
 internal class MapperFile(
     private val packageName: String,
     private val mapFunctionDeclaration: MapFunctionDeclaration,
     private val resolver: Resolver,
     private val codeGenerator: CodeGenerator
-) : GenerateMapperFile, MapFunctionResolver {
+) : GenerateMapperFile, MapFunctionResolver, CollectionTypeCheckHelper {
     private val mapFunctions: MutableMap<MapFunctionDeclaration, MapFunction> = mutableMapOf(
-        mapFunctionDeclaration to MapFunction.create(mapFunctionDeclaration, this)
+        mapFunctionDeclaration to MapFunction.create(
+            mapFunctionDeclaration,
+            this, this
+        )
     )
 
     private fun FileSpec.writeTo(codeGenerator: CodeGenerator) {
@@ -68,11 +74,9 @@ internal class MapperFile(
     }
 
     override fun resolveRequiredMapFunction(mapFunctionDeclaration: MapFunctionDeclaration) {
-        if (mapFunctions.contains(mapFunctionDeclaration).not()) {
-            mapFunctions.put(
-                mapFunctionDeclaration,
-                MapFunction.create(mapFunctionDeclaration, this)
-            )
+        if (!mapFunctions.contains(mapFunctionDeclaration)) {
+            mapFunctions[mapFunctionDeclaration] =
+                MapFunction.create(mapFunctionDeclaration, this, this)
         }
     }
 

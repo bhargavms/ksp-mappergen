@@ -1,5 +1,5 @@
 plugins {
-    id("symbol-processing") version "1.4.20-dev-experimental-20201204"
+    id("symbol-processing") version BuildPlugins.Versions.googleKSP
     id(BuildPlugins.androidApplication)
     id(BuildPlugins.kotlinAndroid)
 }
@@ -31,6 +31,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "1.8"
+    }
+    sourceSets.getByName("main") {
+        java.srcDir("build/generated/ksp/src/")
     }
 }
 

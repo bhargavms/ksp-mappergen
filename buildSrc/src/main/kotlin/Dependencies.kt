@@ -4,6 +4,7 @@ object BuildPlugins {
 
     object Versions {
         const val buildToolsVersion = "4.1.0"
+        const val googleKSP = "1.4.10-dev-experimental-20201106"
     }
 
     const val androidGradlePlugin = "com.android.tools.build:gradle:${Versions.buildToolsVersion}"
@@ -18,7 +19,8 @@ object Libs {
     const val mockitoCore = "org.mockito:mockito-core:${Versions.mockito}"
     const val mockitoKotlin = "com.nhaarman.mockitokotlin2:mockito-kotlin:${Versions.mockitoKotlin}"
     const val kotlinStdLib = "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
-    const val googleKSP = "com.google.devtools.ksp:symbol-processing-api:${Versions.googleKSP}"
+    const val googleKSP =
+        "com.google.devtools.ksp:symbol-processing-api:${BuildPlugins.Versions.googleKSP}"
     const val hamcrest = "org.hamcrest:hamcrest:${Versions.hamcrest}"
     const val kotlinPoet = "com.squareup:kotlinpoet:${Versions.kotlinPoet}"
 
@@ -26,7 +28,6 @@ object Libs {
         const val jUnit = "4.12"
         const val mockito = "2.23.0"
         const val mockitoKotlin = "2.2.0"
-        const val googleKSP = "1.4.10-dev-experimental-20201106"
         const val hamcrest = "2.2"
         const val kotlinPoet = "1.7.2"
     }

@@ -38,7 +38,7 @@ internal fun KSTypeReference?.typeName(): TypeName {
     return if (this == null) {
         UNDEFINED
     } else {
-        resolve().typeName() ?: fallbackClassName()
+        resolve().typeName()
     }
 }
 

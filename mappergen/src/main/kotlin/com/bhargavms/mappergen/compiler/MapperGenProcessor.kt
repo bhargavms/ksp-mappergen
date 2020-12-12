@@ -8,7 +8,6 @@ import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessor
-import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSFunctionDeclaration
 
 class MapperGenProcessor : SymbolProcessor {
@@ -34,12 +33,12 @@ class MapperGenProcessor : SymbolProcessor {
         fun process(resolver: Resolver) {
             resolver.getSymbolsWithAnnotation(Mapper::class.qualifiedName!!)
                     .map {
-                        (it as? KSClassDeclaration)
-                        ?: throw BadAnnotationTargetException(Mapper::class, "interface/class")
+                        (it as? KSFunctionDeclaration)
+                            ?: throw BadAnnotationTargetException(Mapper::class, "function")
                     }
                     .forEach { declaration ->
                         generateMappersForInterface(declaration) {
-                            it.generate(
+                            this?.generate(
                                 resolver, codeGenerator,
                                 declaration.packageName.asString()
                             )
@@ -50,24 +49,21 @@ class MapperGenProcessor : SymbolProcessor {
 
     companion object {
         private inline fun generateMappersForInterface(
-            declaration: KSClassDeclaration,
-            generator: (MapFunctionDeclaration) -> Unit
+            declaration: KSFunctionDeclaration,
+            generate: MapFunctionDeclaration?.() -> Unit
         ) {
-            declaration.getAllFunctions()
-                    .map(KSFunctionDeclaration::extract)
-                    .forEach(generator)
+            declaration.extract().generate()
         }
     }
 }
 
-private fun KSFunctionDeclaration.extract(): MapFunctionDeclaration {
+private fun KSFunctionDeclaration.extract(): MapFunctionDeclaration? {
     val params = parameters
     val returnType = returnType
 
-    if (params.size != 1 || returnType == null) {
-        throw IllegalStateException(
-            "functions need to have 1 parameter and 1 return type"
-        )
+    if (params.size == 1 && returnType != null) {
+        return MapFunctionDeclaration(params[0].type!!.resolve(), returnType.resolve())
+    } else {
+        return null
     }
-    return MapFunctionDeclaration(params[0].type!!.resolve(), returnType.resolve())
 }

@@ -77,15 +77,16 @@ internal abstract class MapFunction(
     companion object {
         fun create(
             mapFunctionDeclaration: MapFunctionDeclaration,
-            mapFunctionResolver: MapFunctionResolver
+            mapFunctionResolver: MapFunctionResolver,
+            typeCheckHelper: CollectionTypeCheckHelper
         ): MapFunction {
             mapFunctionDeclaration.output.isMarkedNullable
-            if (mapFunctionResolver.isArray(mapFunctionDeclaration.output) ||
-                mapFunctionResolver.isIterable(mapFunctionDeclaration.output)
+            return if (typeCheckHelper.isArray(mapFunctionDeclaration.output) ||
+                typeCheckHelper.isIterable(mapFunctionDeclaration.output)
             ) {
-                return IterableObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver)
+                IterableObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver)
             } else {
-                return PlainObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver)
+                PlainObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver)
             }
         }
     }
@@ -116,7 +117,13 @@ internal class PlainObjectMapFunction(
     override fun generateFunction(): FunSpec {
         return FunSpec.builder(mapFunctionName)
             .addParameter("input", mapFunctionDeclaration.input.typeName().copy(true))
+            .returns(mapFunctionDeclaration.output.typeName().copy(true))
             .addCode("return input?.run {\n")
+            .apply {
+                assignments.forEach {
+                    addCode(it.generateStatement())
+                }
+            }
             .addCode("}")
             .build()
     }
@@ -130,41 +137,37 @@ fun getName(type: KSType): String {
     type.arguments.forEach {
         it.type?.let { builder.append(getName(it.resolve())) }
     }
-    builder.append(type.declaration.simpleName)
+    builder.append(type.declaration.simpleName.asString())
     return builder.toString()
 }
 
-internal sealed class Assignment(protected val assigmentDeclaration: AssignmentDeclaration) {
+internal sealed class Assignment(protected val assignmentDeclaration: AssignmentDeclaration) {
     abstract fun generateStatement(): CodeBlock
     internal class DirectAssignment(
-        assigmentDeclaration: AssignmentDeclaration
-    ) : Assignment(assigmentDeclaration) {
+        assignmentDeclaration: AssignmentDeclaration
+    ) : Assignment(assignmentDeclaration) {
         override fun generateStatement(): CodeBlock {
             return CodeBlock.builder().addStatement(
-                "%s = %s",
-                assigmentDeclaration.to.simpleName.asString(),
-                assigmentDeclaration.from.simpleName.asString()
+                "${assignmentDeclaration.to.simpleName.asString()} = " +
+                        assignmentDeclaration.from.simpleName.asString()
             ).build()
         }
     }
 
     internal class MappedAssignment(
-        assigmentDeclaration: AssignmentDeclaration,
+        assignmentDeclaration: AssignmentDeclaration,
         private val mapFunctionDeclaration: MapFunctionDeclaration,
-        mapFunctionResolver: MapFunctionResolver
-    ) : Assignment(assigmentDeclaration) {
-        init {
-            mapFunctionResolver.resolveRequiredMapFunction(mapFunctionDeclaration)
-        }
+        private val mapFunctionResolver: MapFunctionResolver
+    ) : Assignment(assignmentDeclaration) {
 
         override fun generateStatement(): CodeBlock {
+            mapFunctionResolver.resolveRequiredMapFunction(mapFunctionDeclaration)
             val fromType = mapFunctionDeclaration.input
             val toType = mapFunctionDeclaration.output
             return CodeBlock.builder()
                 .addStatement(
-                    "%s = %s",
-                    assigmentDeclaration.to.simpleName.asString(),
-                    getMapFunctionName(fromType, toType)
+                    "${assignmentDeclaration.to.simpleName.asString()} = " +
+                            getMapFunctionName(fromType, toType)
                 )
                 .build()
         }
@@ -172,16 +175,16 @@ internal sealed class Assignment(protected val assigmentDeclaration: AssignmentD
 
     companion object {
         fun create(
-            assigmentDeclaration: AssignmentDeclaration,
+            assignmentDeclaration: AssignmentDeclaration,
             mapFunctionResolver: MapFunctionResolver
         ): Assignment {
-            val fromType = assigmentDeclaration.from.type.resolve()
-            val toType = assigmentDeclaration.to.type.resolve()
+            val fromType = assignmentDeclaration.from.type.resolve()
+            val toType = assignmentDeclaration.to.type.resolve()
             return if (toType.isAssignableFrom(fromType)) {
-                DirectAssignment(assigmentDeclaration)
+                DirectAssignment(assignmentDeclaration)
             } else {
                 MappedAssignment(
-                    assigmentDeclaration, MapFunctionDeclaration(fromType, toType),
+                    assignmentDeclaration, MapFunctionDeclaration(fromType, toType),
                     mapFunctionResolver
                 )
             }
