@@ -187,16 +187,20 @@ internal sealed class Assignment(
             }
         }
 
-private fun getDefaultValue(type: KSType): String {
-    // Check if it's a collection type
-    if (typeCheckHelper.isIterable(type)) {
-        return "emptyList()"
-    }
-    if (typeCheckHelper.isArray(type)) {
-        val elementType = type.arguments.firstOrNull()?.type?.resolve()
-        val elementTypeName = elementType?.declaration?.qualifiedName?.asString() ?: "Any"
-        return "emptyArray<$elementTypeName>()"
-    }
+        private fun getDefaultValue(type: KSType): String {
+            // Check if it's a collection type
+            if (typeCheckHelper.isIterable(type)) {
+                return "emptyList()"
+            }
+            if (typeCheckHelper.isArray(type)) {
+                val elementType =
+                    type.arguments
+                        .firstOrNull()
+                        ?.type
+                        ?.resolve()
+                val elementTypeName = elementType?.declaration?.qualifiedName?.asString() ?: "Any"
+                return "emptyArray<$elementTypeName>()"
+            }
 
             return when (type.declaration.qualifiedName?.asString()) {
                 "kotlin.String" -> "\"\""
@@ -254,8 +258,38 @@ private fun getDefaultValue(type: KSType): String {
             if (fromDecl?.classKind == ClassKind.ENUM_CLASS &&
                 toDecl?.classKind == ClassKind.ENUM_CLASS
             ) {
+                val fromEnumName = fromDecl.qualifiedName?.asString() ?: fromDecl.simpleName.asString()
                 val toEnumName = toDecl.qualifiedName?.asString() ?: toDecl.simpleName.asString()
-                // Get last enum entry for default value
+                val fromEnumEntries =
+                    fromDecl.declarations
+                        .filterIsInstance<KSClassDeclaration>()
+                        .filter { it.classKind == ClassKind.ENUM_ENTRY }
+                        .map { it.simpleName.asString() }
+                val toEnumEntries =
+                    toDecl.declarations
+                        .filterIsInstance<KSClassDeclaration>()
+                        .filter { it.classKind == ClassKind.ENUM_ENTRY }
+                        .map { it.simpleName.asString() }
+
+                val missingEnumEntries = fromEnumEntries.filterNot { it in toEnumEntries }
+                if (missingEnumEntries.iterator().hasNext()) {
+                    val fromLocationStr = assignmentDeclaration.from.locationString()
+                    val toLocationStr = assignmentDeclaration.to.locationString()
+                    throw IllegalStateException(
+                        "Cannot map enum '$fromEnumName' to '$toEnumName' for property '$fromName' -> '$toName': " +
+                            "target enum is missing entries ${missingEnumEntries.joinToString(", ")}.\n" +
+                            "  Source: $fromLocationStr\n" +
+                            "  Target: $toLocationStr",
+                    )
+                }
+
+                val enumBranches =
+                    fromEnumEntries.joinToString("\n") {
+                        "$fromEnumName.$it -> $toEnumName.$it"
+                    }
+                val whenBranchesWith8Spaces = enumBranches.prependIndent("        ")
+                val whenBranchesWith12Spaces = enumBranches.prependIndent("            ")
+
                 val defaultEnumToUse =
                     toDecl.declarations
                         .filterIsInstance<KSClassDeclaration>()
@@ -263,27 +297,29 @@ private fun getDefaultValue(type: KSType): String {
                         ?.simpleName
                         ?.asString()
 
-                return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
-                    // Nullable to non-nullable - need default
-                    if (defaultEnumToUse == null) {
-                        val fromLocationStr = assignmentDeclaration.from.locationString()
-                        val toLocationStr = assignmentDeclaration.to.locationString()
+                return when {
+                    fromType.isMarkedNullable && !toType.isMarkedNullable -> {
+                        // Nullable to non-nullable - need default
+                        if (defaultEnumToUse == null) {
+                            val fromLocationStr = assignmentDeclaration.from.locationString()
+                            val toLocationStr = assignmentDeclaration.to.locationString()
 
-                        throw IllegalStateException(
-                            "Cannot map nullable enum '${fromDecl.qualifiedName?.asString()}' to non-nullable enum '$toEnumName' " +
-                                "for property '$fromName' -> '$toName': target enum has no entries to use as default value.\n" +
-                                "  Source (nullable): $fromLocationStr\n" +
-                                "  Target (non-nullable): $toLocationStr",
-                        )
+                            throw IllegalStateException(
+                                "Cannot map nullable enum '$fromEnumName' to non-nullable enum '$toEnumName' " +
+                                    "for property '$fromName' -> '$toName': target enum has no entries to use as default value.\n" +
+                                    "  Source (nullable): $fromLocationStr\n" +
+                                    "  Target (non-nullable): $toLocationStr",
+                            )
+                        }
+                        val default = "$toEnumName.$defaultEnumToUse"
+                        "$toName = when (it.$fromName) {\n        null -> $default\n$whenBranchesWith8Spaces\n    }"
                     }
-                    val default = "$toEnumName.$defaultEnumToUse"
-                    "$toName = it.$fromName?.let { $toEnumName.valueOf(it.name) } ?: $default"
-                } else if (fromType.isMarkedNullable) {
-                    // Nullable to nullable
-                    "$toName = it.$fromName?.let { $toEnumName.valueOf(it.name) }"
-                } else {
-                    // Non-nullable to non-nullable
-                    "$toName = $toEnumName.valueOf(it.$fromName.name)"
+                    fromType.isMarkedNullable -> {
+                        "$toName = it.$fromName?.let { source ->\n        when (source) {\n$whenBranchesWith12Spaces\n        }\n    }"
+                    }
+                    else -> {
+                        "$toName = when (it.$fromName) {\n$whenBranchesWith8Spaces\n    }"
+                    }
                 }
             }
 
