@@ -19,6 +19,7 @@ object PipelineTest {
         project.tasks.register("pipelineIntegrationTest") {
             group = "CI"
             description = "Run integration tests (included build)"
+            dependsOn(":integrationTests:runKspTests")
         }
 
         // Report generation task
@@ -26,7 +27,7 @@ object PipelineTest {
             group = "CI"
             description = "Report Stage: Generate and prepare test reports for artifacts"
 
-            dependsOn("pipelineTest") // Ensure tests run first
+            dependsOn("pipelineTest", "pipelineIntegrationTest") // Ensure tests run first
 
             doLast {
                 var unitTestSuccess = false
