@@ -129,7 +129,6 @@ class TestSuite internal constructor(
         tests.forEach { test ->
             val path = "$parentPath > ${test.name}"
             val skip = shouldSkip(test, path)
-            val start = System.currentTimeMillis()
             if (!skip) {
                 reporter.testStarted(parentPath, name, test.name)
             }
@@ -137,11 +136,11 @@ class TestSuite internal constructor(
             var error: Throwable? = null
 
             if (!skip) {
+                val start = System.currentTimeMillis()
                 try {
                     beforeEachHooks.forEach { it() }
-                    val before = System.currentTimeMillis()
                     test.block()
-                    duration = System.currentTimeMillis() - before
+                    duration = System.currentTimeMillis() - start
                 } catch (t: Throwable) {
                     error = t
                     duration = System.currentTimeMillis() - start
