@@ -1,6 +1,7 @@
 package com.bhargavms.mappergen.code.generator
 
 import com.bhargavms.mappergen.code.generator.utils.typeName
+import com.google.devtools.ksp.symbol.ClassKind
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
@@ -11,126 +12,126 @@ sealed class Declaration
 
 data class MapFunctionDeclaration(
     val input: KSType,
-    val output: KSType
+    val output: KSType,
 ) : Declaration()
 
 internal data class AssignmentDeclaration(
     val from: KSPropertyDeclaration,
-    val to: KSPropertyDeclaration
+    val to: KSPropertyDeclaration,
 ) : Declaration()
 
 internal abstract class MapFunction(
     protected val mapFunctionDeclaration: MapFunctionDeclaration,
-    private val mapFunctionResolver: MapFunctionResolver
+    private val mapFunctionResolver: MapFunctionResolver,
+    private val typeCheckHelper: CollectionTypeCheckHelper,
 ) {
     abstract fun generateFunction(): FunSpec
 
     protected val mapFunctionName: String by lazy {
         getMapFunctionName(
             mapFunctionDeclaration.input,
-            mapFunctionDeclaration.output
+            mapFunctionDeclaration.output,
         )
     }
 
     protected val assignments: List<Assignment> =
-        (mapFunctionDeclaration.output.declaration as KSClassDeclaration).getAllProperties()
+        (mapFunctionDeclaration.output.declaration as KSClassDeclaration)
+            .getAllProperties()
             .mapNotNull { outputProperty ->
                 (mapFunctionDeclaration.input.declaration as KSClassDeclaration)
-                    .findMostSimilarField(
-                        outputProperty.simpleName.asString()
-                    )?.let { similarInputProperty ->
-                        AssignmentDeclaration(from = similarInputProperty, to = outputProperty)
+                    .findMatchingField(outputProperty.simpleName.asString())
+                    ?.let { matchingInputProperty ->
+                        AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
                     }
-            }.toList().map {
-                Assignment.create(it, mapFunctionResolver)
+            }.toList()
+            .map {
+                Assignment.create(it, mapFunctionResolver, typeCheckHelper)
             }
 
-
-    private fun KSClassDeclaration.findMostSimilarField(forName: CharSequence): KSPropertyDeclaration? {
-        var mostSimilarField: Pair<KSPropertyDeclaration, Int>? = null
-        this.getAllProperties().forEach {
-            val bigger: CharSequence
-            val smaller: CharSequence
-            if (forName.length > it.simpleName.asString().length) {
-                bigger = forName
-                smaller = it.simpleName.asString()
-            } else {
-                bigger = it.simpleName.asString()
-                smaller = forName
-            }
-            val similarChars = getSimilarCharsInSequence(bigger, smaller)
-            if (similarChars > (mostSimilarField?.second ?: -1)) {
-                mostSimilarField = Pair(it, similarChars)
-            }
+    /**
+     * Find a field with exact name match (case-insensitive)
+     */
+    private fun KSClassDeclaration.findMatchingField(forName: String): KSPropertyDeclaration? =
+        getAllProperties().firstOrNull {
+            it.simpleName.asString().equals(forName, ignoreCase = true)
         }
-        return mostSimilarField?.first
-    }
-
-    private fun getSimilarCharsInSequence(bigger: CharSequence, smaller: CharSequence): Int {
-        return if (bigger.contains(smaller) || smaller.length - 2 < 0) {
-            smaller.length
-        } else {
-            getSimilarCharsInSequence(bigger, smaller.subSequence(0, smaller.length - 2))
-        }
-    }
 
     companion object {
         fun create(
             mapFunctionDeclaration: MapFunctionDeclaration,
             mapFunctionResolver: MapFunctionResolver,
-            typeCheckHelper: CollectionTypeCheckHelper
-        ): MapFunction {
-            mapFunctionDeclaration.output.isMarkedNullable
-            return if (typeCheckHelper.isArray(mapFunctionDeclaration.output) ||
+            typeCheckHelper: CollectionTypeCheckHelper,
+        ): MapFunction =
+            if (typeCheckHelper.isArray(mapFunctionDeclaration.output) ||
                 typeCheckHelper.isIterable(mapFunctionDeclaration.output)
             ) {
-                IterableObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver)
+                IterableObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver, typeCheckHelper)
             } else {
-                PlainObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver)
+                PlainObjectMapFunction(mapFunctionDeclaration, mapFunctionResolver, typeCheckHelper)
             }
-        }
     }
 }
 
 internal class IterableObjectMapFunction(
     mapFunctionDeclaration: MapFunctionDeclaration,
-    mapFunctionResolver: MapFunctionResolver
-) : MapFunction(mapFunctionDeclaration, mapFunctionResolver) {
+    mapFunctionResolver: MapFunctionResolver,
+    typeCheckHelper: CollectionTypeCheckHelper,
+) : MapFunction(mapFunctionDeclaration, mapFunctionResolver, typeCheckHelper) {
     override fun generateFunction(): FunSpec {
-        return FunSpec.builder(mapFunctionName)
+        val itemMapFunctionName =
+            getMapFunctionName(
+                mapFunctionDeclaration.input.arguments
+                    .first()
+                    .type!!
+                    .resolve(),
+                mapFunctionDeclaration.output.arguments
+                    .first()
+                    .type!!
+                    .resolve(),
+            )
+        return FunSpec
+            .builder(mapFunctionName)
             .addParameter("input", mapFunctionDeclaration.input.typeName().copy(true))
-            .addCode("return input?.mapNotNull {")
-            .apply {
-                assignments.forEach {
-                    addCode(it.generateStatement())
-                }
-            }
-            .addCode("}")
+            .returns(mapFunctionDeclaration.output.typeName().copy(true))
+            .addCode("return input?.mapNotNull { $itemMapFunctionName(it) }")
             .build()
     }
 }
 
 internal class PlainObjectMapFunction(
     mapFunctionDeclaration: MapFunctionDeclaration,
-    mapFunctionResolver: MapFunctionResolver
-) : MapFunction(mapFunctionDeclaration, mapFunctionResolver) {
+    mapFunctionResolver: MapFunctionResolver,
+    typeCheckHelper: CollectionTypeCheckHelper,
+) : MapFunction(mapFunctionDeclaration, mapFunctionResolver, typeCheckHelper) {
     override fun generateFunction(): FunSpec {
-        return FunSpec.builder(mapFunctionName)
-            .addParameter("input", mapFunctionDeclaration.input.typeName().copy(true))
-            .returns(mapFunctionDeclaration.output.typeName().copy(true))
-            .addCode("return input?.run {\n")
-            .apply {
-                assignments.forEach {
-                    addCode(it.generateStatement())
-                }
+        val outputTypeName = mapFunctionDeclaration.output.typeName()
+
+        val constructorArgs =
+            assignments.mapIndexed { index, assignment ->
+                val separator = if (index < assignments.size - 1) "," else ""
+                assignment.generateConstructorArg() + separator
             }
-            .addCode("}")
-            .build()
+
+        return FunSpec
+            .builder(mapFunctionName)
+            .addParameter("input", mapFunctionDeclaration.input.typeName().copy(true))
+            .returns(outputTypeName.copy(nullable = true))
+            .apply {
+                addCode("return input?.let {\n")
+                addCode("    %T(\n", outputTypeName)
+                constructorArgs.forEach { arg ->
+                    addCode("        $arg\n")
+                }
+                addCode("    )\n")
+                addCode("}")
+            }.build()
     }
 }
 
-fun getMapFunctionName(fromType: KSType, toType: KSType): String =
-    "map${getName(fromType)}To${getName(toType)}"
+fun getMapFunctionName(
+    fromType: KSType,
+    toType: KSType,
+): String = "map${getName(fromType)}To${getName(toType)}"
 
 fun getName(type: KSType): String {
     val builder = StringBuilder()
@@ -141,54 +142,258 @@ fun getName(type: KSType): String {
     return builder.toString()
 }
 
-internal sealed class Assignment(protected val assignmentDeclaration: AssignmentDeclaration) {
+internal sealed class Assignment(
+    protected val assignmentDeclaration: AssignmentDeclaration,
+    protected val typeCheckHelper: CollectionTypeCheckHelper,
+) {
     abstract fun generateStatement(): CodeBlock
+
+    abstract fun generateConstructorArg(): String
+
     internal class DirectAssignment(
-        assignmentDeclaration: AssignmentDeclaration
-    ) : Assignment(assignmentDeclaration) {
+        assignmentDeclaration: AssignmentDeclaration,
+        typeCheckHelper: CollectionTypeCheckHelper,
+    ) : Assignment(assignmentDeclaration, typeCheckHelper) {
         override fun generateStatement(): CodeBlock {
-            return CodeBlock.builder().addStatement(
-                "${assignmentDeclaration.to.simpleName.asString()} = " +
-                        assignmentDeclaration.from.simpleName.asString()
-            ).build()
+            val fromName = assignmentDeclaration.from.simpleName.asString()
+            val toName = assignmentDeclaration.to.simpleName.asString()
+            return CodeBlock
+                .builder()
+                .addStatement("$toName = it.$fromName")
+                .build()
+        }
+
+        override fun generateConstructorArg(): String {
+            val fromName = assignmentDeclaration.from.simpleName.asString()
+            val toName = assignmentDeclaration.to.simpleName.asString()
+            val fromType = assignmentDeclaration.from.type.resolve()
+            val toType = assignmentDeclaration.to.type.resolve()
+
+            // If source is nullable but target is not, add default value
+            if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
+                val defaultValue = getDefaultValue(toType)
+                return "$toName = it.$fromName ?: $defaultValue"
+            } else {
+                // Direct assignment
+                return "$toName = it.$fromName"
+            }
+        }
+
+        private fun getDefaultValue(type: KSType): String {
+            // Check if it's a collection type
+            if (typeCheckHelper.isIterable(type) || typeCheckHelper.isArray(type)) {
+                return "emptyList()"
+            }
+
+            return when (type.declaration.qualifiedName?.asString()) {
+                "kotlin.String" -> "\"\""
+                "kotlin.Int" -> "0"
+                "kotlin.Long" -> "0L"
+                "kotlin.Double" -> "0.0"
+                "kotlin.Float" -> "0.0f"
+                "kotlin.Boolean" -> "false"
+                "kotlin.Byte" -> "0"
+                "kotlin.Short" -> "0"
+                "kotlin.Char" -> "'\\u0000'"
+                else -> "TODO(\"provide default for ${type.declaration.simpleName.asString()}\")"
+            }
         }
     }
 
     internal class MappedAssignment(
         assignmentDeclaration: AssignmentDeclaration,
         private val mapFunctionDeclaration: MapFunctionDeclaration,
-        private val mapFunctionResolver: MapFunctionResolver
-    ) : Assignment(assignmentDeclaration) {
-
+        private val mapFunctionResolver: MapFunctionResolver,
+        typeCheckHelper: CollectionTypeCheckHelper,
+    ) : Assignment(assignmentDeclaration, typeCheckHelper) {
         override fun generateStatement(): CodeBlock {
             mapFunctionResolver.resolveRequiredMapFunction(mapFunctionDeclaration)
-            val fromType = mapFunctionDeclaration.input
-            val toType = mapFunctionDeclaration.output
-            return CodeBlock.builder()
-                .addStatement(
-                    "${assignmentDeclaration.to.simpleName.asString()} = " +
-                            getMapFunctionName(fromType, toType)
+            val fromName = assignmentDeclaration.from.simpleName.asString()
+            val toName = assignmentDeclaration.to.simpleName.asString()
+            val mapFnName =
+                getMapFunctionName(
+                    mapFunctionDeclaration.input,
+                    mapFunctionDeclaration.output,
                 )
+            return CodeBlock
+                .builder()
+                .addStatement("$toName = $mapFnName(it.$fromName)")
                 .build()
+        }
+
+        override fun generateConstructorArg(): String {
+            val fromName = assignmentDeclaration.from.simpleName.asString()
+            val toName = assignmentDeclaration.to.simpleName.asString()
+            val fromType = assignmentDeclaration.from.type.resolve()
+            val toType = assignmentDeclaration.to.type.resolve()
+
+            // Check if both are enums - map by name using valueOf
+            val fromDecl = fromType.declaration as? KSClassDeclaration
+            val toDecl = toType.declaration as? KSClassDeclaration
+            if (fromDecl?.classKind == ClassKind.ENUM_CLASS &&
+                toDecl?.classKind == ClassKind.ENUM_CLASS
+            ) {
+                val toEnumName = toDecl.qualifiedName?.asString() ?: toDecl.simpleName.asString()
+                // Get first enum entry for default value
+                val firstEntry =
+                    toDecl.declarations
+                        .filterIsInstance<KSClassDeclaration>()
+                        .filter { it.classKind == ClassKind.ENUM_ENTRY }
+                        .firstOrNull()
+                        ?.simpleName
+                        ?.asString()
+
+                return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
+                    // Nullable to non-nullable - need default
+                    val default = if (firstEntry != null) "$toEnumName.$firstEntry" else "TODO(\"provide default enum value\")"
+                    "$toName = it.$fromName?.let { $toEnumName.valueOf(it.name) } ?: $default"
+                } else if (fromType.isMarkedNullable) {
+                    // Nullable to nullable
+                    "$toName = it.$fromName?.let { $toEnumName.valueOf(it.name) }"
+                } else {
+                    // Non-nullable to non-nullable
+                    "$toName = $toEnumName.valueOf(it.$fromName.name)"
+                }
+            }
+
+            // Check if it's a collection - handle recursively
+            val fromQualifiedName = fromType.declaration.qualifiedName?.asString() ?: ""
+            val toQualifiedName = toType.declaration.qualifiedName?.asString() ?: ""
+            val isFromCollection =
+                typeCheckHelper.isIterable(fromType) ||
+                    typeCheckHelper.isArray(fromType) ||
+                    fromQualifiedName.startsWith("kotlin.collections.")
+            val isToCollection =
+                typeCheckHelper.isIterable(toType) ||
+                    typeCheckHelper.isArray(toType) ||
+                    toQualifiedName.startsWith("kotlin.collections.")
+
+            if (isFromCollection && isToCollection) {
+                val fromElementType =
+                    fromType.arguments
+                        .firstOrNull()
+                        ?.type
+                        ?.resolve()
+                val toElementType =
+                    toType.arguments
+                        .firstOrNull()
+                        ?.type
+                        ?.resolve()
+
+                if (fromElementType != null && toElementType != null) {
+                    val elementMapFnName = getMapFunctionName(fromElementType, toElementType)
+                    mapFunctionResolver.resolveRequiredMapFunction(
+                        MapFunctionDeclaration(fromElementType, toElementType),
+                    )
+
+                    return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
+                        "$toName = it.$fromName?.mapNotNull { $elementMapFnName(it) } ?: emptyList()"
+                    } else if (fromType.isMarkedNullable) {
+                        "$toName = it.$fromName?.mapNotNull { $elementMapFnName(it) }"
+                    } else {
+                        "$toName = it.$fromName.mapNotNull { $elementMapFnName(it) }"
+                    }
+                }
+            }
+
+            // Regular object mapping
+            mapFunctionResolver.resolveRequiredMapFunction(mapFunctionDeclaration)
+            val mapFnName =
+                getMapFunctionName(
+                    mapFunctionDeclaration.input,
+                    mapFunctionDeclaration.output,
+                )
+
+            // If target is not nullable, we need to handle null result
+            return if (!toType.isMarkedNullable) {
+                "$toName = $mapFnName(it.$fromName) ?: TODO(\"handle null\")"
+            } else {
+                "$toName = $mapFnName(it.$fromName)"
+            }
         }
     }
 
     companion object {
         fun create(
             assignmentDeclaration: AssignmentDeclaration,
-            mapFunctionResolver: MapFunctionResolver
+            mapFunctionResolver: MapFunctionResolver,
+            typeCheckHelper: CollectionTypeCheckHelper,
         ): Assignment {
             val fromType = assignmentDeclaration.from.type.resolve()
             val toType = assignmentDeclaration.to.type.resolve()
-            return if (toType.isAssignableFrom(fromType)) {
-                DirectAssignment(assignmentDeclaration)
+
+            // FIRST: Check if it's a collection that needs recursive mapping
+            // This must come before checking qualified names, because List<T> and List<U>
+            // have the same qualified name but different element types
+            val fromQualifiedName = fromType.declaration.qualifiedName?.asString() ?: ""
+            val toQualifiedName = toType.declaration.qualifiedName?.asString() ?: ""
+            val isFromCollection =
+                typeCheckHelper.isIterable(fromType) ||
+                    typeCheckHelper.isArray(fromType) ||
+                    fromQualifiedName.startsWith("kotlin.collections.")
+            val isToCollection =
+                typeCheckHelper.isIterable(toType) ||
+                    typeCheckHelper.isArray(toType) ||
+                    toQualifiedName.startsWith("kotlin.collections.")
+
+            if (isFromCollection && isToCollection) {
+                val fromElementType =
+                    fromType.arguments
+                        .firstOrNull()
+                        ?.type
+                        ?.resolve()
+                val toElementType =
+                    toType.arguments
+                        .firstOrNull()
+                        ?.type
+                        ?.resolve()
+
+                if (fromElementType != null && toElementType != null) {
+                    // Check if element types are the same (direct assignment) or need mapping
+                    val fromElementQualified = fromElementType.declaration.qualifiedName?.asString()
+                    val toElementQualified = toElementType.declaration.qualifiedName?.asString()
+
+                    // If element types are different, we need recursive mapping
+                    if (fromElementQualified != toElementQualified) {
+                        // Elements need mapping - use MappedAssignment which handles collections
+                        return MappedAssignment(
+                            assignmentDeclaration,
+                            MapFunctionDeclaration(fromType, toType),
+                            mapFunctionResolver,
+                            typeCheckHelper,
+                        )
+                    }
+                    // If element types are the same, fall through to direct assignment
+                }
+            }
+
+            // SECOND: Check if both are enums with the same simple name - map directly
+            val fromDecl = fromType.declaration as? KSClassDeclaration
+            val toDecl = toType.declaration as? KSClassDeclaration
+            if (fromDecl?.classKind == ClassKind.ENUM_CLASS &&
+                toDecl?.classKind == ClassKind.ENUM_CLASS
+            ) {
+                // If enum names match, map directly. Otherwise, they need manual mapping.
+                if (fromDecl.simpleName.asString() == toDecl.simpleName.asString()) {
+                    return DirectAssignment(assignmentDeclaration, typeCheckHelper)
+                }
+                // Different enum names - treat as different types, will use MappedAssignment
+            }
+
+            // THIRD: Check if types are compatible (same base type, possibly different nullability)
+            val fromQualified = fromType.declaration.qualifiedName?.asString()
+            val toQualified = toType.declaration.qualifiedName?.asString()
+
+            return if (fromQualified == toQualified || toType.isAssignableFrom(fromType)) {
+                DirectAssignment(assignmentDeclaration, typeCheckHelper)
             } else {
                 MappedAssignment(
-                    assignmentDeclaration, MapFunctionDeclaration(fromType, toType),
-                    mapFunctionResolver
+                    assignmentDeclaration,
+                    MapFunctionDeclaration(fromType, toType),
+                    mapFunctionResolver,
+                    typeCheckHelper,
                 )
             }
         }
     }
 }
-

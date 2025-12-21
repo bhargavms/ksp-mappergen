@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ktlint wrapper script for fast, pinned CLI usage
+# Downloads and caches ktlint CLI locally for consistent, fast runs
+
+readonly KTLINT_VERSION="1.3.1"  # Pinned version for consistency
+readonly CACHE_DIR=".cache/ktlint"
+readonly KTLINT_JAR="${CACHE_DIR}/ktlint-${KTLINT_VERSION}.jar"
+readonly KTLINT_URL="https://github.com/pinterest/ktlint/releases/download/${KTLINT_VERSION}/ktlint"
+
+# Create cache directory if it doesn't exist
+mkdir -p "$CACHE_DIR"
+
+# Download ktlint if not already cached
+if [[ ! -f "$KTLINT_JAR" ]]; then
+    echo "Downloading ktlint $KTLINT_VERSION..."
+    curl -sSfL "$KTLINT_URL" -o "$KTLINT_JAR"
+    chmod +x "$KTLINT_JAR"
+fi
+
+# Run ktlint with all passed arguments
+exec java -jar "$KTLINT_JAR" "$@"

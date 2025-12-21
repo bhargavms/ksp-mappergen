@@ -1,12 +1,13 @@
 plugins {
-    kotlin("jvm")
+    id("mappergen.kotlin-library")
 }
 
-dependencies {
-    implementation(Libs.kotlinStdLib)
-    implementation(Libs.googleKSP)
-    implementation(project(":mapperGenAnnotations"))
-    implementation(project(":codegen"))
+// Publishing coordinates for the main library
+group = "com.bhargavms.mappergen"
+version = "0.1.0-SNAPSHOT"
 
-    testApi(project(":testCore"))
+dependencies {
+    implementation(libs.ksp.api)
+    implementation(project(":annotations"))
+    implementation(project(":codegen"))
 }

@@ -1,12 +1,9 @@
 plugins {
-    kotlin("jvm")
+    id("mappergen.kotlin-library")
 }
 
 dependencies {
-    implementation(Libs.kotlinStdLib)
-    implementation(Libs.googleKSP)
-    implementation(Libs.kotlinPoet)
-
-    testApi(project(":testCore"))
+    implementation(libs.ksp.api)
+    implementation(libs.kotlinpoet)
     implementation(kotlin("reflect"))
 }
