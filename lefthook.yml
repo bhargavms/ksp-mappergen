@@ -2,6 +2,8 @@
 pre-commit:
   parallel: true
   commands:
+    secrets:
+      run: gitleaks protect --staged --verbose
     ktlint:
       glob: "*.{kt,kts}"
       run: |

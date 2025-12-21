@@ -20,7 +20,6 @@ object PipelineQuality {
             group = "CI"
             description = "Linting: Check code style and formatting"
 
-            // Note: Add actual linting tasks when available
             dependsOn("ktlintCheck")
         }
 
@@ -29,11 +28,7 @@ object PipelineQuality {
             group = "CI"
             description = "Security: Dependency vulnerability checks"
 
-            // Note: Add security scanning when configured
-            // dependsOn("dependencyCheckAnalyze", "owaspDependencyCheck")
-            doLast {
-                println("Security scanning would run here (OWASP, dependency checks, etc.)")
-            }
+            dependsOn("dependencyCheckAnalyze")
         }
     }
 }

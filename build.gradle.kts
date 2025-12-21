@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.ci.pipelines)
+    alias(libs.plugins.owasp.dependencycheck)
 }
 
 tasks.register<Exec>("ktlintCheck") {
@@ -17,4 +18,9 @@ tasks.register<Exec>("ktlintFormat") {
     description = "Format Kotlin code with ktlint"
     executable = "./scripts/ktlintw"
     args("-F", "**/*.kt", "**/*.kts")
+}
+
+dependencyCheck {
+    failBuildOnCVSS = 7.0f
+    formats = listOf("HTML", "JSON")
 }
