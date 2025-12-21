@@ -102,7 +102,7 @@ plugins {
 dependencies {
     // For KMP: use commonMain
     commonMainCompileOnly("com.bhargavms.mappergen:annotations:<version>")
-    
+
     // For JVM-only:
     compileOnly("com.bhargavms.mappergen:annotations:<version>")
     ksp("com.bhargavms.mappergen:mappergen:<version>")
@@ -173,6 +173,11 @@ find sample/build/generated/ksp -name "*.kt" -exec cat {} \;
 ```
 
 ## Development Setup
+
+## Development prerequisites
+
+- `yamllint` (required so the `yaml-check` pre-commit hook can validate staged YAML/YML files before local commits). Install via `pip install yamllint` (optionally pin a stable release like `pip install yamllint==1.27.1`). The project's dev container/CI already provision this tool so using those environments keeps the hook behavior consistent.
+
 
 ### Pre-commit Hooks
 

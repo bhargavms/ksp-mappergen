@@ -1,5 +1,7 @@
 import io.github.bhargavms.gradle.testing.Assertions
 import org.gradle.kotlin.dsl.dependencies
+import org.gradle.testkit.runner.GradleRunner
+import org.gradle.testkit.runner.TaskOutcome
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.File
 
@@ -8,10 +10,6 @@ plugins {
     alias(libs.plugins.ksp)
     `java-test-fixtures`
     id("io.github.bhargavms.ksp-test-runner")
-}
-
-repositories {
-    mavenCentral()
 }
 
 kotlin {
@@ -77,7 +75,7 @@ kspTests {
         beforeAll {
             generatedDir =
                 layout.buildDirectory
-                    .dir("generated/ksp/success/kotlin")!!
+                    .dir("generated/ksp/success/kotlin")
                     .get()
                     .asFile
             val fixturesDir = file("src/testFixtures/kotlin/com/example")
@@ -254,27 +252,23 @@ kspTests {
 
     suite("Error Compilation Tests") {
         test("Nullable nested object to non-nullable target shows helpful error") {
-            // Execute kspErrorKotlin and capture its output using ProcessBuilder
-            val process =
-                ProcessBuilder(
-                    "./gradlew",
-                    ":integrationTests:kspErrorKotlin",
-                    "--info",
-                ).directory(rootDir.parentFile)
-                    .redirectErrorStream(true)
-                    .start()
+            val result =
+                GradleRunner
+                    .create()
+                    .withProjectDir(rootDir)
+                    .withArguments("errorClasses", "--rerun-tasks")
+                    .forwardOutput()
+                    .buildAndFail()
 
-            val output = process.inputStream.bufferedReader().readText()
-            val exitCode = process.waitFor()
-
-            // Task should fail (non-zero exit)
+            val kspTask = result.task(":kspErrorKotlin")
+            Assertions.assertNotNull(kspTask, "kspErrorKotlin task should run")
             Assertions.assertNotEquals(
-                0,
-                exitCode,
+                TaskOutcome.SUCCESS,
+                kspTask!!.outcome,
                 "Expected kspErrorKotlin to fail for nullable->non-nullable mapping",
             )
 
-            // Error output should contain helpful location info
+            val output = result.output
             Assertions.assertContains(
                 output,
                 "NullableNestedObjectError.kt",

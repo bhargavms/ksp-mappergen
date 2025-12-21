@@ -151,15 +151,20 @@ object Assertions {
         message: String? = null,
         block: () -> Unit,
     ) {
+        var thrown = false
         try {
             block()
-            val msg = message ?: "Expected ${T::class.simpleName} to be thrown"
-            throw AssertionError(msg)
         } catch (e: Throwable) {
+            thrown = true
             if (e !is T) {
                 val msg = message ?: "Expected ${T::class.simpleName}, but ${e::class.simpleName} was thrown"
                 throw AssertionError(msg)
             }
+        }
+
+        if (!thrown) {
+            val msg = message ?: "Expected ${T::class.simpleName} to be thrown"
+            throw AssertionError(msg)
         }
     }
 

@@ -16,7 +16,7 @@ open class KspTestExtension(
         name: String,
         block: TestSuite.() -> Unit,
     ) {
-        val suite = TestSuite(name = name, parentPath = name, buildDirectory = buildDir)
+        val suite = TestSuite(name = name, parentPath = name)
         suite.block()
         suites.add(suite)
     }
@@ -46,7 +46,6 @@ open class KspTestExtension(
 class TestSuite internal constructor(
     private val name: String,
     private val parentPath: String,
-    private val buildDirectory: Provider<Directory>,
 ) {
     private val suites = mutableListOf<TestSuite>()
     private val tests = mutableListOf<TestCase>()
@@ -60,7 +59,7 @@ class TestSuite internal constructor(
         block: TestSuite.() -> Unit,
     ) {
         val fullName = "$parentPath > $name"
-        val child = TestSuite(name, fullName, buildDirectory)
+        val child = TestSuite(name, fullName)
         child.block()
         suites.add(child)
     }
