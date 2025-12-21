@@ -23,7 +23,6 @@ import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.asClassName
 
-
 // catch-all type name when we cannot resolve to anything.
 private val UNDEFINED = UndefinedClass::class.asClassName()
 
@@ -34,19 +33,17 @@ private val UNDEFINED = UndefinedClass::class.asClassName()
  * If some types cannot be resolved, we do a best effort name guess from the KSTypeReference's
  * element.
  */
-internal fun KSTypeReference?.typeName(): TypeName {
-    return if (this == null) {
+internal fun KSTypeReference?.typeName(): TypeName =
+    if (this == null) {
         UNDEFINED
     } else {
         resolve().typeName()
     }
-}
 
-private fun KSTypeReference.fallbackClassName(): ClassName {
-    return (element as? KSClassifierReference)?.let {
+private fun KSTypeReference.fallbackClassName(): ClassName =
+    (element as? KSClassifierReference)?.let {
         ClassName.bestGuess(it.referencedName())
     } ?: UNDEFINED
-}
 
 private fun KSName.typeName(): ClassName? {
     if (asString().isBlank()) {
@@ -63,24 +60,31 @@ private fun KSDeclaration.typeName(): ClassName? {
     // if there is no qualified name, it is an error for room
     val qualified = qualifiedName?.asString() ?: return null
     // get the package name first, it might throw for invalid types, hence we use safeGetPackageName
-    val pkg = safeGetPackageName().let {
-        if (it == "<root>") ""
-        else it
-    } ?: return null
+    val pkg =
+        safeGetPackageName().let {
+            if (it == "<root>") {
+                ""
+            } else {
+                it
+            }
+        } ?: return null
     // using qualified name and pkg, figure out the short names.
-    val shortNames = if (pkg == "") {
-        qualified
-    } else {
-        qualified.substring(pkg.length + 1)
-    }.split('.')
+    val shortNames =
+        if (pkg == "") {
+            qualified
+        } else {
+            qualified.substring(pkg.length + 1)
+        }.split('.')
     return ClassName(pkg, shortNames.first(), *(shortNames.drop(1).toTypedArray()))
 }
 
 internal fun KSType.typeName(): TypeName {
     return if (this.arguments.isNotEmpty()) {
-        val args: Array<TypeName> = this.arguments.map {
-            it.type.typeName()
-        }.toTypedArray()
+        val args: Array<TypeName> =
+            this.arguments
+                .map {
+                    it.type.typeName()
+                }.toTypedArray()
         val className = declaration.typeName() ?: return UNDEFINED
         className.parameterizedBy(*args)
     } else {
@@ -92,10 +96,9 @@ internal fun KSType.typeName(): TypeName {
  * KSDeclaration.packageName might throw for error types.
  * https://github.com/android/kotlin/issues/121
  */
-private fun KSDeclaration.safeGetPackageName() : String? {
-    return try {
+private fun KSDeclaration.safeGetPackageName(): String? =
+    try {
         packageName.asString()
-    } catch (t : Throwable) {
+    } catch (t: Throwable) {
         null
     }
-}

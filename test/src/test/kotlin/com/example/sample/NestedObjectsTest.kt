@@ -61,15 +61,14 @@ class NestedObjectsTest {
                 address = null,
                 age = 30,
             )
-        // Note: This will generate TODO in the mapper for null address
-        // The generated code will have: address = mapAddressDtoToAddress(it.address) ?: TODO("handle null")
+        // The mapper handles null nested objects by propagating the null value.
+        // mapAddressDtoToAddress returns null when input is null, so person.address will be null.
         val person = mapPersonDtoToPerson(personDto)
 
-        // Currently the mapper will throw NotImplementedError for null nested objects
-        // This is expected behavior - user needs to handle nulls manually
         assertNotNull(person)
         assertEquals("person-2", person?.id)
         assertEquals("Bob", person?.name)
         assertEquals(30, person?.age)
+        assertNull(person?.address)
     }
 }

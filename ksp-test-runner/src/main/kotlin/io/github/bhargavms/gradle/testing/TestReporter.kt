@@ -19,13 +19,6 @@ class TestReporter {
 
     enum class Status { PASSED, FAILED, SKIPPED }
 
-    private val RESET = "\u001B[0m"
-    private val RED = "\u001B[31m"
-    private val GREEN = "\u001B[32m"
-    private val YELLOW = "\u001B[33m"
-    private val BLUE = "\u001B[34m"
-    private val BOLD = "\u001B[1m"
-
     fun testStarted(
         @Suppress("UNUSED_PARAMETER") suitePath: String,
         @Suppress("UNUSED_PARAMETER") suiteName: String,
@@ -99,4 +92,13 @@ class TestReporter {
             ms < 60_000 -> "%.2fs".format(ms / 1000.0)
             else -> "%.2fm".format(ms / 60_000.0)
         }
+
+    companion object {
+        private val RESET = "\u001B[0m"
+        private val RED = "\u001B[31m"
+        private val GREEN = "\u001B[32m"
+        private val YELLOW = "\u001B[33m"
+        private val BLUE = "\u001B[34m"
+        private val BOLD = "\u001B[1m"
+    }
 }

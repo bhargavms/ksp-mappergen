@@ -250,7 +250,7 @@ internal sealed class Assignment(
                 toDecl?.classKind == ClassKind.ENUM_CLASS
             ) {
                 val toEnumName = toDecl.qualifiedName?.asString() ?: toDecl.simpleName.asString()
-                // Get first enum entry for default value
+                // Get last enum entry for default value
                 val defaultEnumToUse =
                     toDecl.declarations
                         .filterIsInstance<KSClassDeclaration>()
@@ -339,7 +339,8 @@ internal sealed class Assignment(
                 val toLocationStr = assignmentDeclaration.to.locationString()
 
                 throw IllegalStateException(
-                    "Cannot map nullable type '$fromTypeName?' to non-nullable type '$toTypeName' for property '$fromName' -> '$toName'.\n" +
+                    "Cannot map nullable type '$fromTypeName?' to non-nullable type '$toTypeName' " +
+                        "for property '$fromName' -> '$toName'.\n" +
                         "  Source (nullable): $fromLocationStr\n" +
                         "  Target (non-nullable): $toLocationStr\n" +
                         "Either make the target property nullable or provide a default value.",

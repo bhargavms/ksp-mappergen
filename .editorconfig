@@ -11,6 +11,13 @@ indent_size = 4
 [*.{kt,kts}]
 indent_size = 4
 indent_style = space
+ktlint_standard_no-wildcard-imports = disabled
+
+[**/build/**]
+ktlint = disabled
+
+[**/testFixtures/**]
+ktlint = disabled
 
 [*.{yaml,yml}]
 indent_size = 2

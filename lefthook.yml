@@ -10,8 +10,10 @@ pre-commit:
     trailing-whitespace:
       glob: "*.{kt,kts,xml,yaml,yml,toml,md}"
       run: |
-        ! grep -r --include="*.{kt,kts,xml,yaml,yml,toml,md}" \
-          -n '[[:blank:]]$' {staged_files} || exit 1
+        if grep -n '[[:blank:]]$' {staged_files}; then
+          echo "Error: Trailing whitespace found"
+          exit 1
+        fi
     yaml-check:
       glob: "*.{yaml,yml}"
       run: yamllint {staged_files}

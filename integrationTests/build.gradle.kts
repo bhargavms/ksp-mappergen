@@ -49,6 +49,7 @@ dependencies {
 
     // Error source set dependencies
     add("errorCompileOnly", "com.bhargavms.mappergen:annotations")
+    add("kspError", "com.bhargavms.mappergen:mappergen")
 }
 
 kspTests {
@@ -252,38 +253,37 @@ kspTests {
     }
 
     suite("Error Compilation Tests") {
-        test("Nullable nested object to non-nullable target shows locations") {
-            val errorFile = file("src/error/kotlin/com/example/errortest/NullableNestedObjectError.kt")
-            Assertions.assertFileExists(
-                errorFile,
-                "Error test file not found: $errorFile",
+        test("Nullable nested object to non-nullable target shows helpful error") {
+            // Execute kspErrorKotlin and capture its output using ProcessBuilder
+            val process =
+                ProcessBuilder(
+                    "./gradlew",
+                    ":integrationTests:kspErrorKotlin",
+                    "--info",
+                ).directory(rootDir.parentFile)
+                    .redirectErrorStream(true)
+                    .start()
+
+            val output = process.inputStream.bufferedReader().readText()
+            val exitCode = process.waitFor()
+
+            // Task should fail (non-zero exit)
+            Assertions.assertNotEquals(
+                0,
+                exitCode,
+                "Expected kspErrorKotlin to fail for nullable->non-nullable mapping",
             )
 
-            val content = errorFile.readText()
+            // Error output should contain helpful location info
             Assertions.assertContains(
-                content,
-                "data class Target(val address: Address)",
-                "Error test file should have non-nullable address property",
+                output,
+                "NullableNestedObjectError.kt",
+                "Error should reference the source file",
             )
             Assertions.assertContains(
-                content,
-                "data class SourceDto(val address: AddressDto?)",
-                "Error test file should have nullable source address property",
-            )
-            Assertions.assertContains(
-                content,
-                "@Mapper",
-                "Error test file should have @Mapper annotation",
-            )
-            Assertions.assertContains(
-                content,
-                "interface TestMapper",
-                "Error test file should have TestMapper interface",
-            )
-            Assertions.assertContains(
-                content,
-                "fun map(dto: SourceDto): Target",
-                "Error test file should have map method",
+                output,
+                "address",
+                "Error should mention the problematic property 'address'",
             )
         }
     }

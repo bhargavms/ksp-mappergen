@@ -21,10 +21,7 @@ object PipelineQuality {
             description = "Linting: Check code style and formatting"
 
             // Note: Add actual linting tasks when available
-            // dependsOn("detekt", "ktlintCheck")
-            doLast {
-                println("Linting checks would run here (detekt, ktlint, etc.)")
-            }
+            dependsOn("ktlintCheck")
         }
 
         // Security sub-task
