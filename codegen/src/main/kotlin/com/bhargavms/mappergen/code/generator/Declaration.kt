@@ -187,11 +187,16 @@ internal sealed class Assignment(
             }
         }
 
-        private fun getDefaultValue(type: KSType): String {
-            // Check if it's a collection type
-            if (typeCheckHelper.isIterable(type) || typeCheckHelper.isArray(type)) {
-                return "emptyList()"
-            }
+private fun getDefaultValue(type: KSType): String {
+    // Check if it's a collection type
+    if (typeCheckHelper.isIterable(type)) {
+        return "emptyList()"
+    }
+    if (typeCheckHelper.isArray(type)) {
+        val elementType = type.arguments.firstOrNull()?.type?.resolve()
+        val elementTypeName = elementType?.declaration?.qualifiedName?.asString() ?: "Any"
+        return "emptyArray<$elementTypeName>()"
+    }
 
             return when (type.declaration.qualifiedName?.asString()) {
                 "kotlin.String" -> "\"\""
