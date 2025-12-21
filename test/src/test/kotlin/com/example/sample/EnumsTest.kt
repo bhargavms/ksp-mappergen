@@ -53,7 +53,7 @@ class EnumsTest {
     }
 
     @Test
-    fun `test null enum defaults to first enum value`() {
+    fun `test null enum defaults to last enum value`() {
         val nullStatusDto =
             Network.AccountDto(
                 id = "account-4",
@@ -64,7 +64,7 @@ class EnumsTest {
 
         assertNotNull(nullStatusAccount)
         assertEquals("account-4", nullStatusAccount?.id)
-        assertEquals(Domain.Status.ACTIVE, nullStatusAccount?.status) // Should default to first enum value
+        assertEquals(Domain.Status.PENDING, nullStatusAccount?.status) // Should default to last enum value
         assertEquals(0.0, nullStatusAccount?.balance ?: 0.0, 0.001)
     }
 }

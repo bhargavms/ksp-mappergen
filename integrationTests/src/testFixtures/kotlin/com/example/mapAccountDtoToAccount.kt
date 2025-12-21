@@ -9,7 +9,7 @@ public fun mapAccountDtoToAccount(input: Network.AccountDto?): Domain.Account? =
                     com.example.Domain.Status
                         .valueOf(it.name)
                 }
-                    ?: com.example.Domain.Status.ACTIVE,
+                    ?: com.example.Domain.Status.PENDING,
             balance = it.balance ?: 0.0,
         )
     }

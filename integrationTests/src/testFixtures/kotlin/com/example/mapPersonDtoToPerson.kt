@@ -5,7 +5,7 @@ public fun mapPersonDtoToPerson(input: Network.PersonDto?): Domain.Person? =
         Domain.Person(
             id = it.id ?: "",
             name = it.name ?: "",
-            address = mapAddressDtoToAddress(it.address) ?: TODO("handle null"),
+            address = mapAddressDtoToAddress(it.address),
             age = it.age ?: 0,
         )
     }

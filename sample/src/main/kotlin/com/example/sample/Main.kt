@@ -155,7 +155,7 @@ fun testEnums() {
     val inactiveAccount = mapAccountDtoToAccount(inactiveAccountDto)
     println("Inactive Account: $inactiveAccount")
 
-    // Null status - defaults to first enum value (ACTIVE)
+    // Null status - defaults to last enum value (PENDING)
     val nullStatusDto =
         Network.AccountDto(
             id = "account-3",
@@ -163,7 +163,7 @@ fun testEnums() {
             balance = 0.0,
         )
     val nullStatusAccount = mapAccountDtoToAccount(nullStatusDto)
-    println("Null status (defaults to ACTIVE): $nullStatusAccount\n")
+    println("Null status (defaults to PENDING): $nullStatusAccount\n")
 }
 
 fun testComplexStructures() {

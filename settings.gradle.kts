@@ -23,3 +23,6 @@ include(":sample")
 
 // Integration tests as included build (simulates real-world consumption)
 includeBuild("integrationTests")
+
+// KSP test runner plugin as an included build for reuse/publishing
+includeBuild("ksp-test-runner")

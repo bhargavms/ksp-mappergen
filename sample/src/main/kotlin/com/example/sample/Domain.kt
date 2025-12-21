@@ -41,7 +41,7 @@ object Domain {
     data class Person(
         val id: String,
         val name: String,
-        val address: Address,
+        val address: Address?,
         val age: Int,
     )
 

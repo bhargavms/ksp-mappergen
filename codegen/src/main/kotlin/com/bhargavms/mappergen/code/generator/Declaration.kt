@@ -2,9 +2,11 @@ package com.bhargavms.mappergen.code.generator
 
 import com.bhargavms.mappergen.code.generator.utils.typeName
 import com.google.devtools.ksp.symbol.ClassKind
+import com.google.devtools.ksp.symbol.FileLocation
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.NonExistLocation
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
 
@@ -142,6 +144,12 @@ fun getName(type: KSType): String {
     return builder.toString()
 }
 
+private fun KSPropertyDeclaration.locationString(): String =
+    when (val loc = location) {
+        is FileLocation -> "${loc.filePath}:${loc.lineNumber}"
+        is NonExistLocation -> "<unknown location>"
+    }
+
 internal sealed class Assignment(
     protected val assignmentDeclaration: AssignmentDeclaration,
     protected val typeCheckHelper: CollectionTypeCheckHelper,
@@ -195,7 +203,15 @@ internal sealed class Assignment(
                 "kotlin.Byte" -> "0"
                 "kotlin.Short" -> "0"
                 "kotlin.Char" -> "'\\u0000'"
-                else -> "TODO(\"provide default for ${type.declaration.simpleName.asString()}\")"
+                else -> {
+                    val typeName = type.declaration.qualifiedName?.asString() ?: type.toString()
+                    val toLocationStr = assignmentDeclaration.to.locationString()
+
+                    throw IllegalStateException(
+                        "Cannot provide default value for unknown type '$typeName' at $toLocationStr.\n" +
+                            "Supported default types are: String, Int, Long, Double, Float, Boolean, Byte, Short, Char, and Collections.",
+                    )
+                }
             }
         }
     }
@@ -235,17 +251,27 @@ internal sealed class Assignment(
             ) {
                 val toEnumName = toDecl.qualifiedName?.asString() ?: toDecl.simpleName.asString()
                 // Get first enum entry for default value
-                val firstEntry =
+                val defaultEnumToUse =
                     toDecl.declarations
                         .filterIsInstance<KSClassDeclaration>()
-                        .filter { it.classKind == ClassKind.ENUM_ENTRY }
-                        .firstOrNull()
+                        .lastOrNull { it.classKind == ClassKind.ENUM_ENTRY }
                         ?.simpleName
                         ?.asString()
 
                 return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
                     // Nullable to non-nullable - need default
-                    val default = if (firstEntry != null) "$toEnumName.$firstEntry" else "TODO(\"provide default enum value\")"
+                    if (defaultEnumToUse == null) {
+                        val fromLocationStr = assignmentDeclaration.from.locationString()
+                        val toLocationStr = assignmentDeclaration.to.locationString()
+
+                        throw IllegalStateException(
+                            "Cannot map nullable enum '${fromDecl.qualifiedName?.asString()}' to non-nullable enum '$toEnumName' " +
+                                "for property '$fromName' -> '$toName': target enum has no entries to use as default value.\n" +
+                                "  Source (nullable): $fromLocationStr\n" +
+                                "  Target (non-nullable): $toLocationStr",
+                        )
+                    }
+                    val default = "$toEnumName.$defaultEnumToUse"
                     "$toName = it.$fromName?.let { $toEnumName.valueOf(it.name) } ?: $default"
                 } else if (fromType.isMarkedNullable) {
                     // Nullable to nullable
@@ -304,12 +330,23 @@ internal sealed class Assignment(
                     mapFunctionDeclaration.output,
                 )
 
-            // If target is not nullable, we need to handle null result
-            return if (!toType.isMarkedNullable) {
-                "$toName = $mapFnName(it.$fromName) ?: TODO(\"handle null\")"
-            } else {
-                "$toName = $mapFnName(it.$fromName)"
+            // If target is not nullable but source is, fail the build
+            if (!toType.isMarkedNullable && fromType.isMarkedNullable) {
+                val fromTypeName = fromType.declaration.qualifiedName?.asString() ?: fromType.toString()
+                val toTypeName = toType.declaration.qualifiedName?.asString() ?: toType.toString()
+
+                val fromLocationStr = assignmentDeclaration.from.locationString()
+                val toLocationStr = assignmentDeclaration.to.locationString()
+
+                throw IllegalStateException(
+                    "Cannot map nullable type '$fromTypeName?' to non-nullable type '$toTypeName' for property '$fromName' -> '$toName'.\n" +
+                        "  Source (nullable): $fromLocationStr\n" +
+                        "  Target (non-nullable): $toLocationStr\n" +
+                        "Either make the target property nullable or provide a default value.",
+                )
             }
+
+            return "$toName = $mapFnName(it.$fromName)"
         }
     }
 
