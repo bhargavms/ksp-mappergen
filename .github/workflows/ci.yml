@@ -40,21 +40,3 @@ jobs:
 
       - name: Run CI Pipeline
         run: ./gradlew pipeline
-
-      - name: Upload test reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-reports
-          path: |
-            build/reports/tests/
-            build/test-results/
-
-      - name: Upload sample output
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: sample-output
-          path: |
-            sample/build/generated/ksp/
-          retention-days: 7
