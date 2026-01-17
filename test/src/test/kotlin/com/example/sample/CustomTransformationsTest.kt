@@ -28,9 +28,10 @@ class CustomTransformationsTest {
 
     @Test
     fun `test custom transformation - age calculation`() {
-        val currentYear = Year.now().value
-        val birthYear = 1990
-        val expectedAge = currentYear - birthYear
+        // Use a fixed expected age and derive birthYear from it to avoid flakiness
+        // from Year.now() being called at different instants in test vs mapper
+        val expectedAge = 30
+        val birthYear = Year.now().value - expectedAge
 
         val customerDto =
             Network.CustomerDto(
@@ -103,7 +104,9 @@ class CustomTransformationsTest {
         assertNotNull(result)
         // orEmpty() returns "" for null, so "" + " " + "" = " "
         assertEquals(" ", result?.fullName)
-        assertEquals(Year.now().value - 2000, result?.age) // default year 2000
+        // When birthYear is null, mapper uses default 2000; compute expected age the same way
+        val expectedDefaultAge = Year.now().value - 2000
+        assertEquals(expectedDefaultAge, result?.age)
         assertEquals("", result?.fullAddress) // all nulls filtered out by listOfNotNull
     }
 
