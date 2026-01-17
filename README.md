@@ -172,6 +172,11 @@ The `annotations` module supports:
 find sample/build/generated/ksp -name "*.kt" -exec cat {} \;
 ```
 
+## Security Scans
+
+- OWASP Dependency-Check is configured but currently skipped until we have an NVD API key; run `./gradlew :dependencyCheckAnalyze` once you set the `NVD_API_KEY` environment variable.
+- Integration tests now include an error compilation suite that runs via GradleRunner so we can assert on the failure output without spawning external Gradle processes.
+
 ## Development Setup
 
 ## Development prerequisites
@@ -375,4 +380,4 @@ The `test` module provides comprehensive JUnit tests covering all mapper functio
 
 ## License
 
-[Add your license here]
+[Apache License 2.0](LICENSE.txt).
