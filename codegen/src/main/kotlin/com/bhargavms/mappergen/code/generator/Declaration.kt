@@ -95,7 +95,13 @@ internal abstract class MapFunction(
             }.toList()
             .map { declaration ->
                 when (declaration) {
-                    is AssignmentDeclaration -> Assignment.create(declaration, mapFunctionResolver, typeCheckHelper)
+                    is AssignmentDeclaration ->
+                        Assignment.create(
+                            declaration,
+                            mapFunctionResolver,
+                            typeCheckHelper,
+                            mapFunctionDeclaration.matchingStrategy,
+                        )
                     is TransformedAssignmentDeclaration -> TransformedAssignment(declaration, typeCheckHelper)
                     is MapFunctionDeclaration -> error("Unexpected MapFunctionDeclaration in assignment list")
                 }
@@ -270,6 +276,7 @@ internal sealed class Assignment(
         private val mapFunctionDeclaration: MapFunctionDeclaration,
         private val mapFunctionResolver: MapFunctionResolver,
         typeCheckHelper: CollectionTypeCheckHelper,
+        private val matchingStrategy: MatchingStrategyType,
     ) : Assignment(assignmentDeclaration, typeCheckHelper) {
         override fun invoke(): String {
             val fromName = assignmentDeclaration.from.simpleName.asString()
@@ -375,7 +382,7 @@ internal sealed class Assignment(
                 if (fromElementType != null && toElementType != null) {
                     val elementMapFnName = getMapFunctionName(fromElementType, toElementType)
                     mapFunctionResolver.resolveRequiredMapFunction(
-                        MapFunctionDeclaration(fromElementType, toElementType),
+                        MapFunctionDeclaration(fromElementType, toElementType, matchingStrategy),
                     )
 
                     return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
@@ -422,6 +429,7 @@ internal sealed class Assignment(
             assignmentDeclaration: AssignmentDeclaration,
             mapFunctionResolver: MapFunctionResolver,
             typeCheckHelper: CollectionTypeCheckHelper,
+            matchingStrategy: MatchingStrategyType,
         ): Assignment {
             val fromType = assignmentDeclaration.from.type.resolve()
             val toType = assignmentDeclaration.to.type.resolve()
@@ -462,9 +470,10 @@ internal sealed class Assignment(
                         // Elements need mapping - use MappedAssignment which handles collections
                         return MappedAssignment(
                             assignmentDeclaration,
-                            MapFunctionDeclaration(fromType, toType),
+                            MapFunctionDeclaration(fromType, toType, matchingStrategy),
                             mapFunctionResolver,
                             typeCheckHelper,
+                            matchingStrategy,
                         )
                     }
                     // If element types are the same, fall through to direct assignment
@@ -493,9 +502,10 @@ internal sealed class Assignment(
             } else {
                 MappedAssignment(
                     assignmentDeclaration,
-                    MapFunctionDeclaration(fromType, toType),
+                    MapFunctionDeclaration(fromType, toType, matchingStrategy),
                     mapFunctionResolver,
                     typeCheckHelper,
+                    matchingStrategy,
                 )
             }
         }
