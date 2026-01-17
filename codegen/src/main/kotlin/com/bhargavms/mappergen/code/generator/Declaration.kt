@@ -9,7 +9,6 @@ import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.google.devtools.ksp.symbol.NonExistLocation
-import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
 
 sealed class Declaration
@@ -153,10 +152,10 @@ internal class PlainObjectMapFunction(
     override fun generateFunction(): FunSpec {
         val outputTypeName = mapFunctionDeclaration.output.typeName()
 
-        val constructorArgs =
+        val assignmentStatements =
             assignments.mapIndexed { index, assignment ->
                 val separator = if (index < assignments.size - 1) "," else ""
-                assignment.generateConstructorArg() + separator
+                assignment() + separator
             }
 
         return FunSpec
@@ -166,7 +165,7 @@ internal class PlainObjectMapFunction(
             .apply {
                 addCode("return input?.let {\n")
                 addCode("    %T(\n", outputTypeName)
-                constructorArgs.forEach { arg ->
+                assignmentStatements.forEach { arg ->
                     addCode("        $arg\n")
                 }
                 addCode("    )\n")
@@ -199,33 +198,20 @@ private fun KSPropertyDeclaration.locationString(): String =
  * Common interface for all assignment generators (regular and transformed).
  */
 internal interface AssignmentGenerator {
-    fun generateStatement(): CodeBlock
-
-    fun generateConstructorArg(): String
+    operator fun invoke(): String
 }
 
 internal sealed class Assignment(
     protected val assignmentDeclaration: AssignmentDeclaration,
     protected val typeCheckHelper: CollectionTypeCheckHelper,
 ) : AssignmentGenerator {
-    abstract override fun generateStatement(): CodeBlock
-
-    abstract override fun generateConstructorArg(): String
+    abstract override operator fun invoke(): String
 
     internal class DirectAssignment(
         assignmentDeclaration: AssignmentDeclaration,
         typeCheckHelper: CollectionTypeCheckHelper,
     ) : Assignment(assignmentDeclaration, typeCheckHelper) {
-        override fun generateStatement(): CodeBlock {
-            val fromName = assignmentDeclaration.from.simpleName.asString()
-            val toName = assignmentDeclaration.to.simpleName.asString()
-            return CodeBlock
-                .builder()
-                .addStatement("$toName = it.$fromName")
-                .build()
-        }
-
-        override fun generateConstructorArg(): String {
+        override fun invoke(): String {
             val fromName = assignmentDeclaration.from.simpleName.asString()
             val toName = assignmentDeclaration.to.simpleName.asString()
             val fromType = assignmentDeclaration.from.type.resolve()
@@ -285,22 +271,7 @@ internal sealed class Assignment(
         private val mapFunctionResolver: MapFunctionResolver,
         typeCheckHelper: CollectionTypeCheckHelper,
     ) : Assignment(assignmentDeclaration, typeCheckHelper) {
-        override fun generateStatement(): CodeBlock {
-            mapFunctionResolver.resolveRequiredMapFunction(mapFunctionDeclaration)
-            val fromName = assignmentDeclaration.from.simpleName.asString()
-            val toName = assignmentDeclaration.to.simpleName.asString()
-            val mapFnName =
-                getMapFunctionName(
-                    mapFunctionDeclaration.input,
-                    mapFunctionDeclaration.output,
-                )
-            return CodeBlock
-                .builder()
-                .addStatement("$toName = $mapFnName(it.$fromName)")
-                .build()
-        }
-
-        override fun generateConstructorArg(): String {
+        override fun invoke(): String {
             val fromName = assignmentDeclaration.from.simpleName.asString()
             val toName = assignmentDeclaration.to.simpleName.asString()
             val fromType = assignmentDeclaration.from.type.resolve()
@@ -539,15 +510,7 @@ internal class TransformedAssignment(
     private val declaration: TransformedAssignmentDeclaration,
     private val typeCheckHelper: CollectionTypeCheckHelper,
 ) : AssignmentGenerator {
-    override fun generateStatement(): CodeBlock {
-        val toName = declaration.to.simpleName.asString()
-        return CodeBlock
-            .builder()
-            .addStatement("$toName = ${declaration.expression}")
-            .build()
-    }
-
-    override fun generateConstructorArg(): String {
+    override fun invoke(): String {
         val toName = declaration.to.simpleName.asString()
         return "$toName = ${declaration.expression}"
     }
