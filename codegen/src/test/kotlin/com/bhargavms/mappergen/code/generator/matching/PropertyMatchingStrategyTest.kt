@@ -48,6 +48,37 @@ class PropertyMatchingStrategyTest {
         fun `normalize strips set prefix when followed by uppercase`() {
             assertEquals("value", NormalizedNameStrategy.normalize("setValue"))
         }
+
+        @Test
+        fun `normalize strips is prefix when followed by underscore`() {
+            assertEquals("active", NormalizedNameStrategy.normalize("is_active"))
+            assertEquals("enabled", NormalizedNameStrategy.normalize("is_enabled"))
+        }
+
+        @Test
+        fun `normalize strips get prefix when followed by underscore`() {
+            assertEquals("name", NormalizedNameStrategy.normalize("get_name"))
+            assertEquals("value", NormalizedNameStrategy.normalize("get_value"))
+        }
+
+        @Test
+        fun `normalize strips has prefix when followed by underscore`() {
+            assertEquals("items", NormalizedNameStrategy.normalize("has_items"))
+        }
+
+        @Test
+        fun `normalize strips set prefix when followed by underscore`() {
+            assertEquals("value", NormalizedNameStrategy.normalize("set_value"))
+        }
+
+        @Test
+        fun `normalize handles prefix-only names without crashing`() {
+            // Edge case: name equals prefix exactly
+            assertEquals("get", NormalizedNameStrategy.normalize("get"))
+            assertEquals("is", NormalizedNameStrategy.normalize("is"))
+            assertEquals("has", NormalizedNameStrategy.normalize("has"))
+            assertEquals("set", NormalizedNameStrategy.normalize("set"))
+        }
     }
 
     @Nested

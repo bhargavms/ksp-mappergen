@@ -74,7 +74,7 @@ object NormalizedNameStrategy : PropertyMatchingStrategy {
                 val afterPrefix = result.substring(prefix.length)
                 // Only strip if the character after prefix was originally uppercase
                 // (indicates it's a prefix, not part of the word)
-                if (name.length > prefix.length && name[prefix.length].isUpperCase()) {
+                if (name.length > prefix.length && name[prefix.length].isUpperCase() || name[prefix.length] == '_') {
                     result = afterPrefix
                     break
                 }
