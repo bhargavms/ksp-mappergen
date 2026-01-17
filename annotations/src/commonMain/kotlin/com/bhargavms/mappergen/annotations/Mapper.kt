@@ -43,6 +43,8 @@ enum class MatchingStrategy {
 annotation class PropertyTransform(
     /**
      * The name of the target property to transform.
+     * or more precisely
+     * [target] should be the property name in the output class you're mapping to
      */
     val target: String,
     /**
