@@ -1,12 +1,20 @@
+# Gradle
+.gradle/
+build/
+
+# Kotlin
+**/.kotlin/
+
+# IDE
 *.iml
-.gradle
-/local.properties
-.idea
-/.idea/
-*/build
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+.idea/
+
+# Local
 local.properties
+.DS_Store
+
+# Native
+.externalNativeBuild/
+.cxx/
+captures/
+.cache/

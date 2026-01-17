@@ -1,0 +1,35 @@
+---
+pre-commit:
+  parallel: true
+  commands:
+    secrets:
+      run: gitleaks protect --staged --verbose
+    ktlint:
+      glob: "*.{kt,kts}"
+      run: |
+        ./scripts/ktlintw -F {staged_files}
+        git add {staged_files}
+    trailing-whitespace:
+      glob: "*.{kt,kts,xml,yaml,yml,toml,md}"
+      run: |
+        if grep -n '[[:blank:]]$' {staged_files}; then
+          echo "Error: Trailing whitespace found"
+          exit 1
+        fi
+    yaml-check:
+      glob: "*.{yaml,yml}"
+      run: yamllint {staged_files}
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: |
+        # Validate conventional commit format
+        message=$(cat {1})
+        pattern='^(feat|fix|docs|style|refactor|perf|test|build'
+        pattern="${pattern}|ci|chore|revert)(\(.+\))?: .+"
+        if ! echo "$message" | grep -qE "$pattern"; then
+          echo "Error: Commit message must follow Conventional Commits"
+          echo "format. Example: feat(codegen): add new mapper feature"
+          exit 1
+        fi

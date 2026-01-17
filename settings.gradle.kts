@@ -1,23 +1,28 @@
-include(":testCore")
-include(":codegen")
-include(":mapperGenAnnotations")
-include(":mappergen")
-include(":app")
-
-rootProject.name = "mapperCodeGen"
-
 pluginManagement {
-    resolutionStrategy {
-        eachPlugin {
-            when (requested.id.id) {
-                "symbol-processing" ->
-                    useModule("com.google.devtools.ksp:symbol-processing:${requested.version}")
-            }
-        }
-    }
-
+    includeBuild("build-logic")
     repositories {
+        mavenCentral()
         gradlePluginPortal()
-        google()
     }
 }
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = "mappergen"
+
+include(":annotations")
+include(":codegen")
+include(":mappergen")
+include(":test")
+include(":sample")
+
+// Integration tests as included build (simulates real-world consumption)
+includeBuild("integrationTests")
+
+// KSP test runner plugin as an included build for reuse/publishing
+includeBuild("ksp-test-runner")
