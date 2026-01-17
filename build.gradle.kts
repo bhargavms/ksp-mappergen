@@ -21,6 +21,8 @@ tasks.register<Exec>("ktlintFormat") {
 }
 
 dependencyCheck {
+    // Will enable this once we have the NVD API key. Otherwise this task is extremely slow.
+    skip = true
     failBuildOnCVSS = 7.0f
     formats = listOf("HTML", "JSON")
 }

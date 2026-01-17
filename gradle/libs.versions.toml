@@ -3,7 +3,7 @@ kotlin = "2.1.0"
 ksp = "2.1.0-1.0.29"
 kotlinpoet = "1.18.1"
 junit = "5.11.4"
-owasp-dependencycheck = "10.0.3"
+owasp-dependencycheck = "12.2.0"
 
 [libraries]
 # Gradle Plugins (for build-logic)
