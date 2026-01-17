@@ -1,5 +1,7 @@
 package com.bhargavms.mappergen.code.generator
 
+import com.bhargavms.mappergen.code.generator.matching.MatchingStrategyType
+import com.bhargavms.mappergen.code.generator.matching.PropertyMatchingStrategy
 import com.bhargavms.mappergen.code.generator.utils.typeName
 import com.google.devtools.ksp.symbol.ClassKind
 import com.google.devtools.ksp.symbol.FileLocation
@@ -15,11 +17,35 @@ sealed class Declaration
 data class MapFunctionDeclaration(
     val input: KSType,
     val output: KSType,
+    val matchingStrategy: MatchingStrategyType = MatchingStrategyType.EXACT,
+    val propertyTransforms: Map<String, PropertyTransformConfig> = emptyMap(),
 ) : Declaration()
+
+/**
+ * Configuration for a custom property transformation.
+ *
+ * @param sourceProperty The name of the source property (or null to use the target property name)
+ * @param transformerClass The fully qualified class name of the transformer to use
+ * @param expression An optional inline expression (e.g., "it.firstName + \" \" + it.lastName")
+ */
+data class PropertyTransformConfig(
+    val sourceProperty: String? = null,
+    val transformerClass: String? = null,
+    val expression: String? = null,
+)
 
 internal data class AssignmentDeclaration(
     val from: KSPropertyDeclaration,
     val to: KSPropertyDeclaration,
+) : Declaration()
+
+/**
+ * Declaration for a custom transformed assignment using an inline expression.
+ */
+internal data class TransformedAssignmentDeclaration(
+    val to: KSPropertyDeclaration,
+    val expression: String,
+    val sourceProperty: String? = null,
 ) : Declaration()
 
 internal abstract class MapFunction(
@@ -36,27 +62,46 @@ internal abstract class MapFunction(
         )
     }
 
-    protected val assignments: List<Assignment> =
-        (mapFunctionDeclaration.output.declaration as KSClassDeclaration)
+    private val matchingStrategy: PropertyMatchingStrategy by lazy {
+        mapFunctionDeclaration.matchingStrategy.toStrategy()
+    }
+
+    protected val assignments: List<AssignmentGenerator> by lazy {
+        val inputClass = mapFunctionDeclaration.input.declaration as KSClassDeclaration
+        val outputClass = mapFunctionDeclaration.output.declaration as KSClassDeclaration
+        val transforms = mapFunctionDeclaration.propertyTransforms
+
+        outputClass
             .getAllProperties()
             .mapNotNull { outputProperty ->
-                (mapFunctionDeclaration.input.declaration as KSClassDeclaration)
-                    .findMatchingField(outputProperty.simpleName.asString())
-                    ?.let { matchingInputProperty ->
-                        AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
-                    }
-            }.toList()
-            .map {
-                Assignment.create(it, mapFunctionResolver, typeCheckHelper)
-            }
+                val outputName = outputProperty.simpleName.asString()
+                val transformConfig = transforms[outputName]
 
-    /**
-     * Find a field with exact name match (case-insensitive)
-     */
-    private fun KSClassDeclaration.findMatchingField(forName: String): KSPropertyDeclaration? =
-        getAllProperties().firstOrNull {
-            it.simpleName.asString().equals(forName, ignoreCase = true)
-        }
+                // If there's a custom transform with an expression, create a TransformedAssignment
+                if (transformConfig?.expression != null) {
+                    return@mapNotNull TransformedAssignmentDeclaration(
+                        to = outputProperty,
+                        expression = transformConfig.expression,
+                        sourceProperty = transformConfig.sourceProperty,
+                    )
+                }
+
+                // Otherwise, find matching source property using the strategy
+                val sourcePropertyName = transformConfig?.sourceProperty ?: outputName
+                val matchingInputProperty =
+                    matchingStrategy.findMatchingProperty(inputClass, sourcePropertyName)
+                        ?: return@mapNotNull null
+
+                AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
+            }.toList()
+            .map { declaration ->
+                when (declaration) {
+                    is AssignmentDeclaration -> Assignment.create(declaration, mapFunctionResolver, typeCheckHelper)
+                    is TransformedAssignmentDeclaration -> TransformedAssignment(declaration, typeCheckHelper)
+                    is MapFunctionDeclaration -> error("Unexpected MapFunctionDeclaration in assignment list")
+                }
+            }
+    }
 
     companion object {
         fun create(
@@ -150,13 +195,22 @@ private fun KSPropertyDeclaration.locationString(): String =
         is NonExistLocation -> "<unknown location>"
     }
 
+/**
+ * Common interface for all assignment generators (regular and transformed).
+ */
+internal interface AssignmentGenerator {
+    fun generateStatement(): CodeBlock
+
+    fun generateConstructorArg(): String
+}
+
 internal sealed class Assignment(
     protected val assignmentDeclaration: AssignmentDeclaration,
     protected val typeCheckHelper: CollectionTypeCheckHelper,
-) {
-    abstract fun generateStatement(): CodeBlock
+) : AssignmentGenerator {
+    abstract override fun generateStatement(): CodeBlock
 
-    abstract fun generateConstructorArg(): String
+    abstract override fun generateConstructorArg(): String
 
     internal class DirectAssignment(
         assignmentDeclaration: AssignmentDeclaration,
@@ -474,5 +528,27 @@ internal sealed class Assignment(
                 )
             }
         }
+    }
+}
+
+/**
+ * Assignment that uses a custom inline expression for transformation.
+ * The expression is written directly into the generated code.
+ */
+internal class TransformedAssignment(
+    private val declaration: TransformedAssignmentDeclaration,
+    private val typeCheckHelper: CollectionTypeCheckHelper,
+) : AssignmentGenerator {
+    override fun generateStatement(): CodeBlock {
+        val toName = declaration.to.simpleName.asString()
+        return CodeBlock
+            .builder()
+            .addStatement("$toName = ${declaration.expression}")
+            .build()
+    }
+
+    override fun generateConstructorArg(): String {
+        val toName = declaration.to.simpleName.asString()
+        return "$toName = ${declaration.expression}"
     }
 }

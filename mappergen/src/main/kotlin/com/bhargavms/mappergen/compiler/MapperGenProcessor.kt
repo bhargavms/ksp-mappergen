@@ -2,7 +2,9 @@ package com.bhargavms.mappergen.compiler
 
 import com.bhargavms.mappergen.annotations.Mapper
 import com.bhargavms.mappergen.code.generator.MapFunctionDeclaration
+import com.bhargavms.mappergen.code.generator.PropertyTransformConfig
 import com.bhargavms.mappergen.code.generator.generate
+import com.bhargavms.mappergen.code.generator.matching.MatchingStrategyType
 import com.bhargavms.mappergen.compiler.errors.BadAnnotationTargetException
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.KSPLogger
@@ -11,7 +13,9 @@ import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
 import com.google.devtools.ksp.processing.SymbolProcessorProvider
 import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSAnnotation
 import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSType
 
 class MapperGenProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
@@ -57,8 +61,77 @@ private fun KSFunctionDeclaration.extract(): MapFunctionDeclaration? {
     val returnType = returnType
 
     if (params.size == 1 && returnType != null) {
-        return MapFunctionDeclaration(params[0].type.resolve(), returnType.resolve())
+        val mapperAnnotation =
+            annotations.firstOrNull {
+                it.shortName.asString() == "Mapper"
+            }
+
+        val matchingStrategy = mapperAnnotation?.extractMatchingStrategy() ?: MatchingStrategyType.EXACT
+        val transforms = mapperAnnotation?.extractTransforms() ?: emptyMap()
+
+        return MapFunctionDeclaration(
+            input = params[0].type.resolve(),
+            output = returnType.resolve(),
+            matchingStrategy = matchingStrategy,
+            propertyTransforms = transforms,
+        )
     } else {
         return null
     }
+}
+
+/**
+ * Extract the matching strategy from the @Mapper annotation.
+ */
+private fun KSAnnotation.extractMatchingStrategy(): MatchingStrategyType {
+    val strategyArg = arguments.firstOrNull { it.name?.asString() == "matchingStrategy" }
+    val strategyValue = strategyArg?.value
+
+    return when {
+        strategyValue is KSType -> {
+            // The value is an enum entry represented as KSType
+            val enumName = strategyValue.declaration.simpleName.asString()
+            MatchingStrategyType.entries.firstOrNull { it.name == enumName } ?: MatchingStrategyType.EXACT
+        }
+        strategyValue != null -> {
+            // Try to match by string name
+            val enumName = strategyValue.toString()
+            MatchingStrategyType.entries.firstOrNull { it.name == enumName } ?: MatchingStrategyType.EXACT
+        }
+        else -> MatchingStrategyType.EXACT
+    }
+}
+
+/**
+ * Extract property transforms from the @Mapper annotation.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun KSAnnotation.extractTransforms(): Map<String, PropertyTransformConfig> {
+    val transformsArg = arguments.firstOrNull { it.name?.asString() == "transforms" }
+    val transformsValue = transformsArg?.value as? List<KSAnnotation> ?: return emptyMap()
+
+    return transformsValue
+        .mapNotNull { transformAnnotation ->
+            val target =
+                transformAnnotation.arguments
+                    .firstOrNull { it.name?.asString() == "target" }
+                    ?.value as? String
+                    ?: return@mapNotNull null
+
+            val source =
+                transformAnnotation.arguments
+                    .firstOrNull { it.name?.asString() == "source" }
+                    ?.value as? String
+
+            val expression =
+                transformAnnotation.arguments
+                    .firstOrNull { it.name?.asString() == "expression" }
+                    ?.value as? String
+
+            target to
+                PropertyTransformConfig(
+                    sourceProperty = source?.takeIf { it.isNotEmpty() },
+                    expression = expression?.takeIf { it.isNotEmpty() },
+                )
+        }.toMap()
 }

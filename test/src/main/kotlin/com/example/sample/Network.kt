@@ -73,4 +73,22 @@ object Network {
         val employees: List<PersonDto>?,
         val headquarters: AddressDto?,
     )
+
+    // For testing normalized matching (snake_case naming)
+    data class SnakeCaseUserDto(
+        val user_id: String?,
+        val user_name: String?,
+        val email_address: String?,
+        val created_at: Long?,
+    )
+
+    // For testing custom transformations
+    data class CustomerDto(
+        val firstName: String?,
+        val lastName: String?,
+        val birthYear: Int?,
+        val addressLine1: String?,
+        val addressLine2: String?,
+        val cityName: String?,
+    )
 }

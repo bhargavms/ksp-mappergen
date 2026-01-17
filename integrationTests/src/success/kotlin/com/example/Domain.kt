@@ -73,4 +73,19 @@ object Domain {
         val employees: List<Person>,
         val headquarters: Address?,
     )
+
+    // For testing normalized matching (camelCase naming)
+    data class NormalizedUser(
+        val userId: String,
+        val userName: String,
+        val emailAddress: String,
+        val createdAt: Long,
+    )
+
+    // For testing custom transformations
+    data class Customer(
+        val fullName: String,
+        val age: Int,
+        val fullAddress: String,
+    )
 }

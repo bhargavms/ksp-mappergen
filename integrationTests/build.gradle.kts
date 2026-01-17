@@ -158,6 +158,71 @@ kspTests {
             }
         }
 
+        suite("Smart Property Matching") {
+
+            test("Normalized matching maps snake_case to camelCase") {
+                assertGeneratedContent("mapSnakeCaseUserDtoToNormalizedUser.kt")
+            }
+
+            test("Normalized matching generates correct property references") {
+                val content = generatedFile("mapSnakeCaseUserDtoToNormalizedUser.kt").readText()
+                // Verify snake_case source properties are correctly referenced
+                Assertions.assertContains(content, "it.user_id", "Should reference snake_case source property user_id")
+                Assertions.assertContains(content, "it.user_name", "Should reference snake_case source property user_name")
+                Assertions.assertContains(content, "it.email_address", "Should reference snake_case source property email_address")
+                Assertions.assertContains(content, "it.created_at", "Should reference snake_case source property created_at")
+                // Verify camelCase target properties are correctly assigned
+                Assertions.assertContains(content, "userId =", "Should assign to camelCase target property userId")
+                Assertions.assertContains(content, "userName =", "Should assign to camelCase target property userName")
+                Assertions.assertContains(content, "emailAddress =", "Should assign to camelCase target property emailAddress")
+                Assertions.assertContains(content, "createdAt =", "Should assign to camelCase target property createdAt")
+            }
+        }
+
+        suite("Custom Transformations") {
+
+            test("Custom expressions generate inline transformations") {
+                assertGeneratedContent("mapCustomerDtoToCustomer.kt")
+            }
+
+            test("Custom expression for fullName concatenation") {
+                val content = generatedFile("mapCustomerDtoToCustomer.kt").readText()
+                Assertions.assertContains(
+                    content,
+                    "fullName = (it.firstName.orEmpty()) + \" \" + (it.lastName.orEmpty())",
+                    "Should generate fullName concatenation expression",
+                )
+            }
+
+            test("Custom expression for age calculation") {
+                val content = generatedFile("mapCustomerDtoToCustomer.kt").readText()
+                Assertions.assertContains(
+                    content,
+                    "java.time.Year.now().value",
+                    "Should include Year.now() in age calculation",
+                )
+                Assertions.assertContains(
+                    content,
+                    "it.birthYear",
+                    "Should reference birthYear in age calculation",
+                )
+            }
+
+            test("Custom expression for address joining") {
+                val content = generatedFile("mapCustomerDtoToCustomer.kt").readText()
+                Assertions.assertContains(
+                    content,
+                    "listOfNotNull",
+                    "Should use listOfNotNull for address parts",
+                )
+                Assertions.assertContains(
+                    content,
+                    "joinToString()",
+                    "Should use joinToString for address",
+                )
+            }
+        }
+
         suite("Code Quality") {
 
             test("Null safety preserved with ?.let") {
@@ -171,6 +236,8 @@ kspTests {
                         "mapOrderDtoToOrder.kt",
                         "mapAccountDtoToAccount.kt",
                         "mapCompanyDtoToCompany.kt",
+                        "mapSnakeCaseUserDtoToNormalizedUser.kt",
+                        "mapCustomerDtoToCustomer.kt",
                     )
 
                 mapperFiles.forEach { fileName ->
@@ -205,13 +272,16 @@ kspTests {
                         "mapOrderDtoToOrder.kt" to "mapOrderDtoToOrder",
                         "mapAccountDtoToAccount.kt" to "mapAccountDtoToAccount",
                         "mapCompanyDtoToCompany.kt" to "mapCompanyDtoToCompany",
+                        "mapSnakeCaseUserDtoToNormalizedUser.kt" to "mapSnakeCaseUserDtoToNormalizedUser",
+                        "mapCustomerDtoToCustomer.kt" to "mapCustomerDtoToCustomer",
                     )
 
                 functionSignatures.forEach { (fileName, functionName) ->
                     val content = generatedFile(fileName).readText()
+                    // Use DOTALL flag to match across newlines (for long signatures that wrap)
                     Assertions.assertMatches(
                         content,
-                        Regex("public fun $functionName\\(input: .+\\?\\): .+\\?"),
+                        Regex("public fun $functionName\\(input: .+\\?\\):[\\s\\S]*?\\?\\s*=", RegexOption.DOT_MATCHES_ALL),
                         "Incorrect function signature in $fileName. Expected public nullable function with nullable input/output",
                     )
                 }
