@@ -1,5 +1,7 @@
 package com.bhargavms.mappergen.code.generator
 
+import com.bhargavms.mappergen.code.generator.matching.MatchingStrategyType
+import com.bhargavms.mappergen.code.generator.matching.PropertyMatchingStrategy
 import com.bhargavms.mappergen.code.generator.utils.typeName
 import com.google.devtools.ksp.symbol.ClassKind
 import com.google.devtools.ksp.symbol.FileLocation
@@ -7,7 +9,6 @@ import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.google.devtools.ksp.symbol.NonExistLocation
-import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
 
 sealed class Declaration
@@ -15,11 +16,35 @@ sealed class Declaration
 data class MapFunctionDeclaration(
     val input: KSType,
     val output: KSType,
+    val matchingStrategy: MatchingStrategyType = MatchingStrategyType.EXACT,
+    val propertyTransforms: Map<String, PropertyTransformConfig> = emptyMap(),
 ) : Declaration()
+
+/**
+ * Configuration for a custom property transformation.
+ *
+ * @param sourceProperty The name of the source property (or null to use the target property name)
+ * @param transformerClass The fully qualified class name of the transformer to use
+ * @param expression An optional inline expression (e.g., "it.firstName + \" \" + it.lastName")
+ */
+data class PropertyTransformConfig(
+    val sourceProperty: String? = null,
+    val transformerClass: String? = null,
+    val expression: String? = null,
+)
 
 internal data class AssignmentDeclaration(
     val from: KSPropertyDeclaration,
     val to: KSPropertyDeclaration,
+) : Declaration()
+
+/**
+ * Declaration for a custom transformed assignment using an inline expression.
+ */
+internal data class TransformedAssignmentDeclaration(
+    val to: KSPropertyDeclaration,
+    val expression: String,
+    val sourceProperty: String? = null,
 ) : Declaration()
 
 internal abstract class MapFunction(
@@ -36,27 +61,52 @@ internal abstract class MapFunction(
         )
     }
 
-    protected val assignments: List<Assignment> =
-        (mapFunctionDeclaration.output.declaration as KSClassDeclaration)
+    private val matchingStrategy: PropertyMatchingStrategy by lazy {
+        mapFunctionDeclaration.matchingStrategy.toStrategy()
+    }
+
+    protected val assignments: List<AssignmentGenerator> by lazy {
+        val inputClass = mapFunctionDeclaration.input.declaration as KSClassDeclaration
+        val outputClass = mapFunctionDeclaration.output.declaration as KSClassDeclaration
+        val transforms = mapFunctionDeclaration.propertyTransforms
+
+        outputClass
             .getAllProperties()
             .mapNotNull { outputProperty ->
-                (mapFunctionDeclaration.input.declaration as KSClassDeclaration)
-                    .findMatchingField(outputProperty.simpleName.asString())
-                    ?.let { matchingInputProperty ->
-                        AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
-                    }
-            }.toList()
-            .map {
-                Assignment.create(it, mapFunctionResolver, typeCheckHelper)
-            }
+                val outputName = outputProperty.simpleName.asString()
+                val transformConfig = transforms[outputName]
 
-    /**
-     * Find a field with exact name match (case-insensitive)
-     */
-    private fun KSClassDeclaration.findMatchingField(forName: String): KSPropertyDeclaration? =
-        getAllProperties().firstOrNull {
-            it.simpleName.asString().equals(forName, ignoreCase = true)
-        }
+                // If there's a custom transform with an expression, create a TransformedAssignment
+                if (transformConfig?.expression != null) {
+                    return@mapNotNull TransformedAssignmentDeclaration(
+                        to = outputProperty,
+                        expression = transformConfig.expression,
+                        sourceProperty = transformConfig.sourceProperty,
+                    )
+                }
+
+                // Otherwise, find matching source property using the strategy
+                val sourcePropertyName = transformConfig?.sourceProperty ?: outputName
+                val matchingInputProperty =
+                    matchingStrategy.findMatchingProperty(inputClass, sourcePropertyName)
+                        ?: return@mapNotNull null
+
+                AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
+            }.toList()
+            .map { declaration ->
+                when (declaration) {
+                    is AssignmentDeclaration ->
+                        Assignment.create(
+                            declaration,
+                            mapFunctionResolver,
+                            typeCheckHelper,
+                            mapFunctionDeclaration.matchingStrategy,
+                        )
+                    is TransformedAssignmentDeclaration -> TransformedAssignment(declaration, typeCheckHelper)
+                    is MapFunctionDeclaration -> error("Unexpected MapFunctionDeclaration in assignment list")
+                }
+            }
+    }
 
     companion object {
         fun create(
@@ -108,10 +158,10 @@ internal class PlainObjectMapFunction(
     override fun generateFunction(): FunSpec {
         val outputTypeName = mapFunctionDeclaration.output.typeName()
 
-        val constructorArgs =
+        val assignmentStatements =
             assignments.mapIndexed { index, assignment ->
                 val separator = if (index < assignments.size - 1) "," else ""
-                assignment.generateConstructorArg() + separator
+                assignment() + separator
             }
 
         return FunSpec
@@ -121,7 +171,7 @@ internal class PlainObjectMapFunction(
             .apply {
                 addCode("return input?.let {\n")
                 addCode("    %T(\n", outputTypeName)
-                constructorArgs.forEach { arg ->
+                assignmentStatements.forEach { arg ->
                     addCode("        $arg\n")
                 }
                 addCode("    )\n")
@@ -150,28 +200,24 @@ private fun KSPropertyDeclaration.locationString(): String =
         is NonExistLocation -> "<unknown location>"
     }
 
+/**
+ * Common interface for all assignment generators (regular and transformed).
+ */
+internal interface AssignmentGenerator {
+    operator fun invoke(): String
+}
+
 internal sealed class Assignment(
     protected val assignmentDeclaration: AssignmentDeclaration,
     protected val typeCheckHelper: CollectionTypeCheckHelper,
-) {
-    abstract fun generateStatement(): CodeBlock
-
-    abstract fun generateConstructorArg(): String
+) : AssignmentGenerator {
+    abstract override operator fun invoke(): String
 
     internal class DirectAssignment(
         assignmentDeclaration: AssignmentDeclaration,
         typeCheckHelper: CollectionTypeCheckHelper,
     ) : Assignment(assignmentDeclaration, typeCheckHelper) {
-        override fun generateStatement(): CodeBlock {
-            val fromName = assignmentDeclaration.from.simpleName.asString()
-            val toName = assignmentDeclaration.to.simpleName.asString()
-            return CodeBlock
-                .builder()
-                .addStatement("$toName = it.$fromName")
-                .build()
-        }
-
-        override fun generateConstructorArg(): String {
+        override fun invoke(): String {
             val fromName = assignmentDeclaration.from.simpleName.asString()
             val toName = assignmentDeclaration.to.simpleName.asString()
             val fromType = assignmentDeclaration.from.type.resolve()
@@ -230,23 +276,9 @@ internal sealed class Assignment(
         private val mapFunctionDeclaration: MapFunctionDeclaration,
         private val mapFunctionResolver: MapFunctionResolver,
         typeCheckHelper: CollectionTypeCheckHelper,
+        private val matchingStrategy: MatchingStrategyType,
     ) : Assignment(assignmentDeclaration, typeCheckHelper) {
-        override fun generateStatement(): CodeBlock {
-            mapFunctionResolver.resolveRequiredMapFunction(mapFunctionDeclaration)
-            val fromName = assignmentDeclaration.from.simpleName.asString()
-            val toName = assignmentDeclaration.to.simpleName.asString()
-            val mapFnName =
-                getMapFunctionName(
-                    mapFunctionDeclaration.input,
-                    mapFunctionDeclaration.output,
-                )
-            return CodeBlock
-                .builder()
-                .addStatement("$toName = $mapFnName(it.$fromName)")
-                .build()
-        }
-
-        override fun generateConstructorArg(): String {
+        override fun invoke(): String {
             val fromName = assignmentDeclaration.from.simpleName.asString()
             val toName = assignmentDeclaration.to.simpleName.asString()
             val fromType = assignmentDeclaration.from.type.resolve()
@@ -350,7 +382,7 @@ internal sealed class Assignment(
                 if (fromElementType != null && toElementType != null) {
                     val elementMapFnName = getMapFunctionName(fromElementType, toElementType)
                     mapFunctionResolver.resolveRequiredMapFunction(
-                        MapFunctionDeclaration(fromElementType, toElementType),
+                        MapFunctionDeclaration(fromElementType, toElementType, matchingStrategy),
                     )
 
                     return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
@@ -397,6 +429,7 @@ internal sealed class Assignment(
             assignmentDeclaration: AssignmentDeclaration,
             mapFunctionResolver: MapFunctionResolver,
             typeCheckHelper: CollectionTypeCheckHelper,
+            matchingStrategy: MatchingStrategyType,
         ): Assignment {
             val fromType = assignmentDeclaration.from.type.resolve()
             val toType = assignmentDeclaration.to.type.resolve()
@@ -437,9 +470,10 @@ internal sealed class Assignment(
                         // Elements need mapping - use MappedAssignment which handles collections
                         return MappedAssignment(
                             assignmentDeclaration,
-                            MapFunctionDeclaration(fromType, toType),
+                            MapFunctionDeclaration(fromType, toType, matchingStrategy),
                             mapFunctionResolver,
                             typeCheckHelper,
+                            matchingStrategy,
                         )
                     }
                     // If element types are the same, fall through to direct assignment
@@ -468,11 +502,26 @@ internal sealed class Assignment(
             } else {
                 MappedAssignment(
                     assignmentDeclaration,
-                    MapFunctionDeclaration(fromType, toType),
+                    MapFunctionDeclaration(fromType, toType, matchingStrategy),
                     mapFunctionResolver,
                     typeCheckHelper,
+                    matchingStrategy,
                 )
             }
         }
+    }
+}
+
+/**
+ * Assignment that uses a custom inline expression for transformation.
+ * The expression is written directly into the generated code.
+ */
+internal class TransformedAssignment(
+    private val declaration: TransformedAssignmentDeclaration,
+    private val typeCheckHelper: CollectionTypeCheckHelper,
+) : AssignmentGenerator {
+    override fun invoke(): String {
+        val toName = declaration.to.simpleName.asString()
+        return "$toName = ${declaration.expression}"
     }
 }

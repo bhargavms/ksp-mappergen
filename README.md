@@ -370,11 +370,83 @@ The `test` module provides comprehensive JUnit tests covering all mapper functio
 - ✅ Nullable to non-nullable with defaults
 - ✅ Primitive type defaults
 - ✅ Data class constructor generation
+- ✅ Smart property matching (exact, normalized, fuzzy)
+- ✅ Custom property transformations via inline expressions
+
+## Smart Property Matching
+
+By default, MapperGen uses exact case-insensitive matching. You can configure smarter matching strategies:
+
+```kotlin
+import com.bhargavms.mappergen.annotations.Mapper
+import com.bhargavms.mappergen.annotations.MatchingStrategy
+
+// Source with snake_case naming
+data class SnakeCaseUserDto(
+    val user_id: String?,
+    val user_name: String?,
+    val email_address: String?,
+)
+
+// Target with camelCase naming
+data class User(
+    val userId: String,
+    val userName: String,
+    val emailAddress: String,
+)
+
+interface Mappers {
+    // Use normalized matching to handle snake_case to camelCase
+    @Mapper(matchingStrategy = MatchingStrategy.NORMALIZED)
+    fun mapUser(dto: SnakeCaseUserDto): User
+}
+```
+
+Available strategies:
+- `EXACT` - Case-insensitive exact match (default)
+- `NORMALIZED` - Handles naming convention differences (snake_case, camelCase, etc.)
+- `FUZZY` - Levenshtein distance-based fuzzy matching for minor spelling differences
+
+## Custom Property Transformations
+
+Use `PropertyTransform` to define custom transformations for specific properties:
+
+```kotlin
+import com.bhargavms.mappergen.annotations.Mapper
+import com.bhargavms.mappergen.annotations.PropertyTransform
+
+data class CustomerDto(
+    val firstName: String?,
+    val lastName: String?,
+    val birthYear: Int?,
+)
+
+data class Customer(
+    val fullName: String,
+    val age: Int,
+)
+
+interface Mappers {
+    @Mapper(
+        transforms = [
+            PropertyTransform(
+                target = "fullName",
+                expression = "(it.firstName.orEmpty()) + \" \" + (it.lastName.orEmpty())"
+            ),
+            PropertyTransform(
+                target = "age",
+                expression = "java.time.Year.now().value - (it.birthYear ?: 2000)"
+            ),
+        ]
+    )
+    fun mapCustomer(dto: CustomerDto): Customer
+}
+```
+
+The `expression` is written directly into the generated code, with `it` referring to the input object.
 
 ## Limitations
 
-- ⚠️ Properties must have exact name match (case-insensitive)
-- ⚠️ No custom transformations yet
 - ⚠️ Nested object mapping needs work
 - ⚠️ Collection mapping is basic
 
