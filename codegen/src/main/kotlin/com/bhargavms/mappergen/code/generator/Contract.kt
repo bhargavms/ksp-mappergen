@@ -4,6 +4,7 @@ import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSFile
 import com.google.devtools.ksp.symbol.KSType
 import com.squareup.kotlinpoet.FileSpec
 import java.io.OutputStreamWriter
@@ -20,6 +21,7 @@ fun MapFunctionDeclaration.generate(
     resolver: Resolver,
     codeGenerator: CodeGenerator,
     packageName: String,
+    originatingFiles: List<KSFile>,
 ) {
     if (input.declaration is KSClassDeclaration && output.declaration is KSClassDeclaration) {
         MapperFile(
@@ -27,6 +29,7 @@ fun MapFunctionDeclaration.generate(
             this,
             resolver,
             codeGenerator,
+            originatingFiles,
         ).invoke()
     } else {
         throw RuntimeException()
@@ -54,6 +57,7 @@ internal class MapperFile(
     private val mapFunctionDeclaration: MapFunctionDeclaration,
     private val resolver: Resolver,
     private val codeGenerator: CodeGenerator,
+    private val originatingFiles: List<KSFile>,
 ) : GenerateMapperFile,
     MapFunctionResolver,
     CollectionTypeCheckHelper {
@@ -75,9 +79,24 @@ internal class MapperFile(
         return fromKey to toKey
     }
 
+    private fun resolvedOriginatingFiles(): Array<KSFile> {
+        val fromMappedTypes =
+            mapFunctions.keys.flatMap { decl ->
+                listOfNotNull(
+                    (decl.input.declaration as? KSClassDeclaration)?.containingFile,
+                    (decl.output.declaration as? KSClassDeclaration)?.containingFile,
+                )
+            }
+        return (originatingFiles + fromMappedTypes).distinct().toTypedArray()
+    }
+
     private fun FileSpec.writeTo(codeGenerator: CodeGenerator) {
         OutputStreamWriter(
-            codeGenerator.createNewFile(Dependencies(false), packageName, name),
+            codeGenerator.createNewFile(
+                Dependencies(aggregating = false, sources = resolvedOriginatingFiles()),
+                packageName,
+                name,
+            ),
             UTF_8,
         ).use(::writeTo)
     }

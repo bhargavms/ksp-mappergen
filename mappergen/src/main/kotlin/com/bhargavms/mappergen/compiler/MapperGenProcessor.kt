@@ -34,27 +34,23 @@ class MapperGenProcessor(
                 (it as? KSFunctionDeclaration)
                     ?: throw BadAnnotationTargetException(Mapper::class, "function")
             }.forEach { declaration ->
-                generateMappersForInterface(declaration) {
-                    this?.generate(
-                        resolver,
-                        codeGenerator,
-                        declaration.packageName.asString(),
-                    )
-                }
+                val mapFunctionDeclaration = declaration.extract()
+                mapFunctionDeclaration?.generate(
+                    resolver,
+                    codeGenerator,
+                    declaration.packageName.asString(),
+                    originatingFiles =
+                        listOfNotNull(
+                            declaration.containingFile,
+                            (mapFunctionDeclaration.input.declaration as? KSClassDeclaration)?.containingFile,
+                            (mapFunctionDeclaration.output.declaration as? KSClassDeclaration)?.containingFile,
+                        ),
+                )
             }
         return emptyList()
     }
 
     override fun finish() {}
-
-    companion object {
-        private inline fun generateMappersForInterface(
-            declaration: KSFunctionDeclaration,
-            generate: MapFunctionDeclaration?.() -> Unit,
-        ) {
-            declaration.extract().generate()
-        }
-    }
 }
 
 private fun KSFunctionDeclaration.extract(): MapFunctionDeclaration? {
