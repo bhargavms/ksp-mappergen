@@ -66,46 +66,51 @@ internal abstract class MapFunction(
     }
 
     protected val assignments: List<AssignmentGenerator> by lazy {
-        val inputClass = mapFunctionDeclaration.input.declaration as KSClassDeclaration
-        val outputClass = mapFunctionDeclaration.output.declaration as KSClassDeclaration
-        val transforms = mapFunctionDeclaration.propertyTransforms
+        mapFunctionResolver.beginAssignmentGeneration(mapFunctionDeclaration)
+        try {
+            val inputClass = mapFunctionDeclaration.input.declaration as KSClassDeclaration
+            val outputClass = mapFunctionDeclaration.output.declaration as KSClassDeclaration
+            val transforms = mapFunctionDeclaration.propertyTransforms
 
-        outputClass
-            .getAllProperties()
-            .mapNotNull { outputProperty ->
-                val outputName = outputProperty.simpleName.asString()
-                val transformConfig = transforms[outputName]
+            outputClass
+                .getAllProperties()
+                .map { outputProperty ->
+                    val outputName = outputProperty.simpleName.asString()
+                    val transformConfig = transforms[outputName]
 
-                // If there's a custom transform with an expression, create a TransformedAssignment
-                if (transformConfig?.expression != null) {
-                    return@mapNotNull TransformedAssignmentDeclaration(
-                        to = outputProperty,
-                        expression = transformConfig.expression,
-                        sourceProperty = transformConfig.sourceProperty,
-                    )
-                }
-
-                // Otherwise, find matching source property using the strategy
-                val sourcePropertyName = transformConfig?.sourceProperty ?: outputName
-                val matchingInputProperty =
-                    matchingStrategy.findMatchingProperty(inputClass, sourcePropertyName)
-                        ?: return@mapNotNull null
-
-                AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
-            }.toList()
-            .map { declaration ->
-                when (declaration) {
-                    is AssignmentDeclaration ->
-                        Assignment.create(
-                            declaration,
-                            mapFunctionResolver,
-                            typeCheckHelper,
-                            mapFunctionDeclaration.matchingStrategy,
+                    if (transformConfig?.expression != null) {
+                        TransformedAssignmentDeclaration(
+                            to = outputProperty,
+                            expression = transformConfig.expression,
+                            sourceProperty = transformConfig.sourceProperty,
                         )
-                    is TransformedAssignmentDeclaration -> TransformedAssignment(declaration, typeCheckHelper)
-                    is MapFunctionDeclaration -> error("Unexpected MapFunctionDeclaration in assignment list")
-                }
-            }
+                    } else {
+                        val sourcePropertyName = transformConfig?.sourceProperty ?: outputName
+                        val matchingInputProperty =
+                            matchingStrategy.findMatchingProperty(inputClass, sourcePropertyName)
+                                ?: throw IllegalStateException(
+                                    "Cannot map property '$outputName': no matching source property found " +
+                                        "in '${inputClass.simpleName.asString()}'.",
+                                )
+
+                        AssignmentDeclaration(from = matchingInputProperty, to = outputProperty)
+                    }
+                }.map { declaration ->
+                    when (declaration) {
+                        is AssignmentDeclaration ->
+                            Assignment.create(
+                                declaration,
+                                mapFunctionResolver,
+                                typeCheckHelper,
+                                mapFunctionDeclaration.matchingStrategy,
+                            )
+                        is TransformedAssignmentDeclaration -> TransformedAssignment(declaration, typeCheckHelper)
+                        is MapFunctionDeclaration -> error("Unexpected MapFunctionDeclaration in assignment list")
+                    }
+                }.toList()
+        } finally {
+            mapFunctionResolver.endAssignmentGeneration(mapFunctionDeclaration)
+        }
     }
 
     companion object {
@@ -200,6 +205,87 @@ private fun KSPropertyDeclaration.locationString(): String =
         is NonExistLocation -> "<unknown location>"
     }
 
+private fun isCollectionLike(
+    type: KSType,
+    typeCheckHelper: CollectionTypeCheckHelper,
+): Boolean {
+    if (typeCheckHelper.isMap(type)) {
+        return false
+    }
+    val qualifiedName = type.declaration.qualifiedName?.asString() ?: ""
+    return typeCheckHelper.isIterable(type) ||
+        typeCheckHelper.isArray(type) ||
+        qualifiedName.startsWith("kotlin.collections.")
+}
+
+internal fun needsTypeMapping(
+    fromType: KSType,
+    toType: KSType,
+    typeCheckHelper: CollectionTypeCheckHelper,
+): Boolean {
+    if (fromType.declaration.qualifiedName?.asString() != toType.declaration.qualifiedName?.asString()) {
+        return true
+    }
+    if (fromType.arguments.size != toType.arguments.size) {
+        return true
+    }
+    for (index in fromType.arguments.indices) {
+        val fromArgument = fromType.arguments[index].type?.resolve() ?: return true
+        val toArgument = toType.arguments[index].type?.resolve() ?: return true
+        if (needsTypeMapping(fromArgument, toArgument, typeCheckHelper)) {
+            return true
+        }
+    }
+    return false
+}
+
+private fun buildCollectionMappingExpression(
+    fromType: KSType,
+    toType: KSType,
+    accessExpr: String,
+    matchingStrategy: MatchingStrategyType,
+    mapFunctionResolver: MapFunctionResolver,
+    typeCheckHelper: CollectionTypeCheckHelper,
+): String {
+    val fromElementType =
+        fromType.arguments
+            .firstOrNull()
+            ?.type
+            ?.resolve()
+            ?: error("Collection type is missing an element type")
+    val toElementType =
+        toType.arguments
+            .firstOrNull()
+            ?.type
+            ?.resolve()
+            ?: error("Collection type is missing an element type")
+
+    if (isCollectionLike(fromElementType, typeCheckHelper) &&
+        isCollectionLike(toElementType, typeCheckHelper) &&
+        needsTypeMapping(fromElementType, toElementType, typeCheckHelper)
+    ) {
+        mapFunctionResolver.resolveRequiredMapFunction(
+            MapFunctionDeclaration(fromElementType, toElementType, matchingStrategy),
+        )
+        val innerMapping =
+            buildCollectionMappingExpression(
+                fromElementType,
+                toElementType,
+                "inner",
+                matchingStrategy,
+                mapFunctionResolver,
+                typeCheckHelper,
+            )
+        return "$accessExpr.map { inner -> $innerMapping }"
+    }
+
+    mapFunctionResolver.resolveRequiredMapFunction(
+        MapFunctionDeclaration(fromElementType, toElementType, matchingStrategy),
+    )
+    val elementMapFunctionName = getMapFunctionName(fromElementType, toElementType)
+    return "$accessExpr.mapNotNull { $elementMapFunctionName(it) }"
+}
+
 /**
  * Common interface for all assignment generators (regular and transformed).
  */
@@ -223,6 +309,15 @@ internal sealed class Assignment(
             val fromType = assignmentDeclaration.from.type.resolve()
             val toType = assignmentDeclaration.to.type.resolve()
 
+            if (typeCheckHelper.isMap(fromType) && typeCheckHelper.isMap(toType)) {
+                val mapExpression = "it.$fromName?.entries?.associate { it.key to it.value }"
+                return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
+                    "$toName = $mapExpression ?: emptyMap()"
+                } else {
+                    "$toName = $mapExpression"
+                }
+            }
+
             // If source is nullable but target is not, add default value
             if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
                 val defaultValue = getDefaultValue(toType)
@@ -237,6 +332,9 @@ internal sealed class Assignment(
             // Check if it's a collection type
             if (typeCheckHelper.isIterable(type)) {
                 return "emptyList()"
+            }
+            if (typeCheckHelper.isMap(type)) {
+                return "emptyMap()"
             }
             if (typeCheckHelper.isArray(type)) {
                 val elementType =
@@ -325,7 +423,7 @@ internal sealed class Assignment(
                 val defaultEnumToUse =
                     toDecl.declarations
                         .filterIsInstance<KSClassDeclaration>()
-                        .lastOrNull { it.classKind == ClassKind.ENUM_ENTRY }
+                        .firstOrNull { it.classKind == ClassKind.ENUM_ENTRY }
                         ?.simpleName
                         ?.asString()
 
@@ -356,18 +454,7 @@ internal sealed class Assignment(
             }
 
             // Check if it's a collection - handle recursively
-            val fromQualifiedName = fromType.declaration.qualifiedName?.asString() ?: ""
-            val toQualifiedName = toType.declaration.qualifiedName?.asString() ?: ""
-            val isFromCollection =
-                typeCheckHelper.isIterable(fromType) ||
-                    typeCheckHelper.isArray(fromType) ||
-                    fromQualifiedName.startsWith("kotlin.collections.")
-            val isToCollection =
-                typeCheckHelper.isIterable(toType) ||
-                    typeCheckHelper.isArray(toType) ||
-                    toQualifiedName.startsWith("kotlin.collections.")
-
-            if (isFromCollection && isToCollection) {
+            if (isCollectionLike(fromType, typeCheckHelper) && isCollectionLike(toType, typeCheckHelper)) {
                 val fromElementType =
                     fromType.arguments
                         .firstOrNull()
@@ -380,18 +467,31 @@ internal sealed class Assignment(
                         ?.resolve()
 
                 if (fromElementType != null && toElementType != null) {
-                    val elementMapFnName = getMapFunctionName(fromElementType, toElementType)
-                    mapFunctionResolver.resolveRequiredMapFunction(
-                        MapFunctionDeclaration(fromElementType, toElementType, matchingStrategy),
-                    )
+                    val accessExpr = if (fromType.isMarkedNullable) "it.$fromName?" else "it.$fromName"
+                    val mappingExpression =
+                        buildCollectionMappingExpression(
+                            fromType,
+                            toType,
+                            accessExpr,
+                            matchingStrategy,
+                            mapFunctionResolver,
+                            typeCheckHelper,
+                        )
 
                     return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
-                        "$toName = it.$fromName?.mapNotNull { $elementMapFnName(it) } ?: emptyList()"
-                    } else if (fromType.isMarkedNullable) {
-                        "$toName = it.$fromName?.mapNotNull { $elementMapFnName(it) }"
+                        "$toName = $mappingExpression ?: emptyList()"
                     } else {
-                        "$toName = it.$fromName.mapNotNull { $elementMapFnName(it) }"
+                        "$toName = $mappingExpression"
                     }
+                }
+            }
+
+            if (typeCheckHelper.isMap(fromType) && typeCheckHelper.isMap(toType)) {
+                val mapExpression = "it.$fromName?.entries?.associate { it.key to it.value }"
+                return if (fromType.isMarkedNullable && !toType.isMarkedNullable) {
+                    "$toName = $mapExpression ?: emptyMap()"
+                } else {
+                    "$toName = $mapExpression"
                 }
             }
 
@@ -437,18 +537,7 @@ internal sealed class Assignment(
             // FIRST: Check if it's a collection that needs recursive mapping
             // This must come before checking qualified names, because List<T> and List<U>
             // have the same qualified name but different element types
-            val fromQualifiedName = fromType.declaration.qualifiedName?.asString() ?: ""
-            val toQualifiedName = toType.declaration.qualifiedName?.asString() ?: ""
-            val isFromCollection =
-                typeCheckHelper.isIterable(fromType) ||
-                    typeCheckHelper.isArray(fromType) ||
-                    fromQualifiedName.startsWith("kotlin.collections.")
-            val isToCollection =
-                typeCheckHelper.isIterable(toType) ||
-                    typeCheckHelper.isArray(toType) ||
-                    toQualifiedName.startsWith("kotlin.collections.")
-
-            if (isFromCollection && isToCollection) {
+            if (isCollectionLike(fromType, typeCheckHelper) && isCollectionLike(toType, typeCheckHelper)) {
                 val fromElementType =
                     fromType.arguments
                         .firstOrNull()
@@ -461,23 +550,23 @@ internal sealed class Assignment(
                         ?.resolve()
 
                 if (fromElementType != null && toElementType != null) {
-                    // Check if element types are the same (direct assignment) or need mapping
-                    val fromElementQualified = fromElementType.declaration.qualifiedName?.asString()
-                    val toElementQualified = toElementType.declaration.qualifiedName?.asString()
-
-                    // If element types are different, we need recursive mapping
-                    if (fromElementQualified != toElementQualified) {
-                        // Elements need mapping - use MappedAssignment which handles collections
+                    if (needsTypeMapping(fromElementType, toElementType, typeCheckHelper)) {
+                        val nestedDeclaration =
+                            MapFunctionDeclaration(fromType, toType, matchingStrategy)
+                        mapFunctionResolver.resolveRequiredMapFunction(nestedDeclaration)
                         return MappedAssignment(
                             assignmentDeclaration,
-                            MapFunctionDeclaration(fromType, toType, matchingStrategy),
+                            nestedDeclaration,
                             mapFunctionResolver,
                             typeCheckHelper,
                             matchingStrategy,
                         )
                     }
-                    // If element types are the same, fall through to direct assignment
                 }
+            }
+
+            if (typeCheckHelper.isMap(fromType) && typeCheckHelper.isMap(toType)) {
+                return DirectAssignment(assignmentDeclaration, typeCheckHelper)
             }
 
             // SECOND: Check if both are enums with the same simple name - map directly
@@ -500,9 +589,12 @@ internal sealed class Assignment(
             return if (fromQualified == toQualified || toType.isAssignableFrom(fromType)) {
                 DirectAssignment(assignmentDeclaration, typeCheckHelper)
             } else {
+                val nestedDeclaration =
+                    MapFunctionDeclaration(fromType, toType, matchingStrategy)
+                mapFunctionResolver.resolveRequiredMapFunction(nestedDeclaration)
                 MappedAssignment(
                     assignmentDeclaration,
-                    MapFunctionDeclaration(fromType, toType, matchingStrategy),
+                    nestedDeclaration,
                     mapFunctionResolver,
                     typeCheckHelper,
                     matchingStrategy,

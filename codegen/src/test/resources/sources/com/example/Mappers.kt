@@ -1,4 +1,4 @@
-package com.example.sample
+package com.example
 
 import com.bhargavms.mappergen.annotations.Mapper
 import com.bhargavms.mappergen.annotations.MatchingStrategy
@@ -55,16 +55,4 @@ interface Mappers {
         ],
     )
     fun mapCustomer(value: Network.CustomerDto): Domain.Customer
-
-    @Mapper(matchingStrategy = MatchingStrategy.FUZZY)
-    fun mapFuzzyUser(value: Network.FuzzySourceDto): Domain.FuzzyTarget
-
-    @Mapper
-    fun mapPartialAccount(value: Network.PartialAccountDto): Domain.PartialAccount
-
-    @Mapper
-    fun mapTag(value: Network.TagDto): Domain.Tag
-
-    @Mapper
-    fun mapTaggedList(value: Network.TaggedListDto): Domain.TaggedList
 }

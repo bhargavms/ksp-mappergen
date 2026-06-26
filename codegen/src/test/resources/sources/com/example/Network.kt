@@ -1,4 +1,4 @@
-package com.example.sample
+package com.example
 
 /**
  * Network layer DTOs - nullable types from API responses
@@ -90,30 +90,5 @@ object Network {
         val addressLine1: String?,
         val addressLine2: String?,
         val cityName: String?,
-    )
-
-    // Fuzzy matching runtime coverage
-    data class FuzzySourceDto(
-        val usrname: String?,
-        val emial: String?,
-    )
-
-    // Enum default runtime coverage
-    enum class PartialStatusDto {
-        ACTIVE,
-        INACTIVE,
-    }
-
-    data class PartialAccountDto(
-        val status: PartialStatusDto?,
-    )
-
-    // Collection edge cases
-    data class TagDto(
-        val label: String?,
-    )
-
-    data class TaggedListDto(
-        val tags: List<TagDto?>?,
     )
 }

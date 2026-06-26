@@ -1,4 +1,4 @@
-package com.example.sample
+package com.example
 
 /**
  * Domain layer models - clean, non-nullable types
@@ -87,27 +87,5 @@ object Domain {
         val fullName: String,
         val age: Int,
         val fullAddress: String,
-    )
-
-    data class FuzzyTarget(
-        val username: String,
-        val email: String,
-    )
-
-    enum class PartialStatus {
-        ACTIVE,
-        INACTIVE,
-    }
-
-    data class PartialAccount(
-        val status: PartialStatus,
-    )
-
-    data class Tag(
-        val label: String,
-    )
-
-    data class TaggedList(
-        val tags: List<Tag>,
     )
 }

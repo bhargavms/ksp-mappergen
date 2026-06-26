@@ -18,5 +18,17 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags("known-bug")
+    }
+}
+
+tasks.register<Test>("knownBugTest") {
+    group = "red-tests"
+    description = "Run RED-by-design tests tagged known-bug (allowed to fail)"
+    testClassesDirs = tasks.test.get().testClassesDirs
+    classpath = tasks.test.get().classpath
+    useJUnitPlatform {
+        includeTags("known-bug")
+    }
 }

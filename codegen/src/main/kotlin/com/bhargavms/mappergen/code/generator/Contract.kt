@@ -35,12 +35,18 @@ fun MapFunctionDeclaration.generate(
 
 internal interface MapFunctionResolver {
     fun resolveRequiredMapFunction(mapFunctionDeclaration: MapFunctionDeclaration)
+
+    fun beginAssignmentGeneration(mapFunctionDeclaration: MapFunctionDeclaration)
+
+    fun endAssignmentGeneration(mapFunctionDeclaration: MapFunctionDeclaration)
 }
 
 internal interface CollectionTypeCheckHelper {
     fun isIterable(type: KSType): Boolean
 
     fun isArray(type: KSType): Boolean
+
+    fun isMap(type: KSType): Boolean
 }
 
 internal class MapperFile(
@@ -60,6 +66,14 @@ internal class MapperFile(
                     this,
                 ),
         )
+
+    private val assignmentGenerationStack = mutableSetOf<Pair<String, String>>()
+
+    private fun MapFunctionDeclaration.typePairKey(): Pair<String, String> {
+        val fromKey = input.declaration.qualifiedName?.asString() ?: input.toString()
+        val toKey = output.declaration.qualifiedName?.asString() ?: output.toString()
+        return fromKey to toKey
+    }
 
     private fun FileSpec.writeTo(codeGenerator: CodeGenerator) {
         OutputStreamWriter(
@@ -85,13 +99,43 @@ internal class MapperFile(
     }
 
     override fun resolveRequiredMapFunction(mapFunctionDeclaration: MapFunctionDeclaration) {
+        if (mapFunctionDeclaration.typePairKey() in assignmentGenerationStack) {
+            val fromType =
+                mapFunctionDeclaration.input.declaration.simpleName
+                    .asString()
+            val toType =
+                mapFunctionDeclaration.output.declaration.simpleName
+                    .asString()
+            throw IllegalStateException(
+                "Cannot map recursive type '$fromType' to '$toType': cyclic mapping dependency detected.",
+            )
+        }
         if (!mapFunctions.contains(mapFunctionDeclaration)) {
             mapFunctions[mapFunctionDeclaration] =
                 MapFunction.create(mapFunctionDeclaration, this, this)
         }
     }
 
+    override fun beginAssignmentGeneration(mapFunctionDeclaration: MapFunctionDeclaration) {
+        assignmentGenerationStack.add(mapFunctionDeclaration.typePairKey())
+    }
+
+    override fun endAssignmentGeneration(mapFunctionDeclaration: MapFunctionDeclaration) {
+        assignmentGenerationStack.remove(mapFunctionDeclaration.typePairKey())
+    }
+
     override fun isIterable(type: KSType): Boolean = resolver.builtIns.iterableType.isAssignableFrom(type)
 
     override fun isArray(type: KSType) = resolver.builtIns.arrayType.isAssignableFrom(type)
+
+    override fun isMap(type: KSType): Boolean {
+        val qualifiedName = type.declaration.qualifiedName?.asString() ?: return false
+        if (qualifiedName == "kotlin.collections.Map" || qualifiedName == "kotlin.collections.MutableMap") {
+            return true
+        }
+        val mapDeclaration =
+            resolver.getClassDeclarationByName(resolver.getKSNameFromString("kotlin.collections.Map"))
+                ?: return false
+        return mapDeclaration.asStarProjectedType().isAssignableFrom(type.makeNotNullable())
+    }
 }

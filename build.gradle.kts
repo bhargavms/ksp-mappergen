@@ -4,6 +4,26 @@ plugins {
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.ci.pipelines)
     alias(libs.plugins.owasp.dependencycheck)
+    alias(libs.plugins.kover)
+}
+
+dependencies {
+    kover(project(":codegen"))
+    kover(project(":mappergen"))
+    kover(project(":annotations"))
+}
+
+kover {
+    reports {
+        total {
+            html {
+                onCheck = true
+            }
+            xml {
+                onCheck = true
+            }
+        }
+    }
 }
 
 tasks.register<Exec>("ktlintCheck") {

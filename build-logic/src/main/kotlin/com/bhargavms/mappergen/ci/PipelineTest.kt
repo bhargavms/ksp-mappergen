@@ -12,7 +12,14 @@ object PipelineTest {
             group = "CI"
             description = "Test Stage: Run all unit tests and generate reports"
 
-            dependsOn(":test:test")
+            dependsOn(":test:test", ":codegen:test")
+        }
+
+        project.tasks.register("pipelineCoverage") {
+            group = "CI"
+            description = "Coverage Stage: Run processor tests and enforce Kover gate on :codegen"
+
+            dependsOn(":codegen:test", ":codegen:koverVerify")
         }
 
         // Separate task for integration tests only
@@ -27,7 +34,7 @@ object PipelineTest {
             group = "CI"
             description = "Report Stage: Generate and prepare test reports for artifacts"
 
-            dependsOn("pipelineTest", "pipelineIntegrationTest") // Ensure tests run first
+            dependsOn("pipelineTest", "pipelineIntegrationTest", "pipelineCoverage") // Ensure tests run first
 
             doLast {
                 var unitTestSuccess = false
@@ -69,6 +76,14 @@ object PipelineTest {
                     integrationTestSuccess = integrationTestSuccess && true
                 } else {
                     println("⚠️  Integration test JUnit XML reports not found expected at ${integrationJunitDir.absolutePath}")
+                }
+
+                // Check Kover coverage reports
+                val koverHtmlReport = project.file("build/reports/kover/html/index.html")
+                if (koverHtmlReport.exists()) {
+                    println("✅ Kover HTML report generated at ${koverHtmlReport.absolutePath}")
+                } else {
+                    println("⚠️  Kover HTML report not found at ${koverHtmlReport.absolutePath}")
                 }
 
                 // Summary

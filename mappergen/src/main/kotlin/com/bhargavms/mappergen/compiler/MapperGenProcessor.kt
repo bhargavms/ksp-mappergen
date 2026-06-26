@@ -14,6 +14,7 @@ import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
 import com.google.devtools.ksp.processing.SymbolProcessorProvider
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSFunctionDeclaration
 import com.google.devtools.ksp.symbol.KSType
 
@@ -87,18 +88,23 @@ private fun KSAnnotation.extractMatchingStrategy(): MatchingStrategyType {
     val strategyArg = arguments.firstOrNull { it.name?.asString() == "matchingStrategy" }
     val strategyValue = strategyArg?.value
 
-    return when {
-        strategyValue is KSType -> {
-            // The value is an enum entry represented as KSType
+    return when (strategyValue) {
+        is KSType -> {
+            // KSP1: enum entries are represented as KSType
             val enumName = strategyValue.declaration.simpleName.asString()
             MatchingStrategyType.entries.firstOrNull { it.name == enumName } ?: MatchingStrategyType.EXACT
         }
-        strategyValue != null -> {
-            // Try to match by string name
-            val enumName = strategyValue.toString()
+        is KSClassDeclaration -> {
+            // KSP2: enum entries are represented as KSClassDeclaration
+            val enumName = strategyValue.simpleName.asString()
             MatchingStrategyType.entries.firstOrNull { it.name == enumName } ?: MatchingStrategyType.EXACT
         }
-        else -> MatchingStrategyType.EXACT
+        null -> MatchingStrategyType.EXACT
+        else -> {
+            val enumName = strategyValue.toString()
+            MatchingStrategyType.entries.firstOrNull { it.name == enumName || enumName.endsWith(".${it.name}") }
+                ?: MatchingStrategyType.EXACT
+        }
     }
 }
 

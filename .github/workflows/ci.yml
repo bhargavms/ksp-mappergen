@@ -39,4 +39,4 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Run CI Pipeline
-        run: ./gradlew pipeline
+        run: ./gradlew pipeline pipelineCoverage
