@@ -46,3 +46,9 @@ dependencyCheck {
     failBuildOnCVSS = 7.0f
     formats = listOf("HTML", "JSON")
 }
+
+tasks.named("dependencyCheckAnalyze").configure {
+    notCompatibleWithConfigurationCache(
+        "OWASP Dependency-Check accesses Project at execution time",
+    )
+}

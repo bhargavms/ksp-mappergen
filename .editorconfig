@@ -19,6 +19,9 @@ ktlint = disabled
 [**/testFixtures/**]
 ktlint = disabled
 
+[**/fixtures/**]
+ktlint = disabled
+
 [*.{yaml,yml}]
 indent_size = 2
 indent_style = space
