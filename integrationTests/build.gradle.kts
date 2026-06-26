@@ -5,6 +5,53 @@ import org.gradle.testkit.runner.TaskOutcome
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.File
 
+private fun File.prepareIncrementalWorkspace(
+    fixtureDir: File,
+    repoRoot: File,
+): File {
+    if (exists()) {
+        deleteRecursively()
+    }
+    fixtureDir.copyRecursively(this, overwrite = true)
+    val repoPath = repoRoot.absolutePath.replace('\\', '/')
+    resolve("settings.gradle.kts").writeText(
+        """
+        pluginManagement {
+            includeBuild("$repoPath/build-logic")
+            repositories {
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+
+        dependencyResolutionManagement {
+            repositories {
+                mavenCentral()
+            }
+            versionCatalogs {
+                create("libs") {
+                    from(files("$repoPath/gradle/libs.versions.toml"))
+                }
+            }
+        }
+
+        rootProject.name = "incremental-fixture"
+        includeBuild("$repoPath")
+        """.trimIndent(),
+    )
+    return this
+}
+
+private fun File.generatedUserMapper(): File = resolve("build/generated/ksp/main/kotlin/com/example/mapUserDtoToUser.kt")
+
+private fun File.runKsp(vararg extraArgs: String) =
+    GradleRunner
+        .create()
+        .withProjectDir(this)
+        .withArguments(listOf("kspKotlin", "--no-build-cache") + extraArgs.toList())
+        .forwardOutput()
+        .build()
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
@@ -108,6 +155,110 @@ kspTests {
             val output = result.output
             Assertions.assertContains(output, "NullableNestedObjectError.kt")
             Assertions.assertContains(output, "address")
+        }
+    }
+
+    suite("Incremental Compilation E2E") {
+        test("DTO change regenerates affected mapper on incremental ksp run") {
+            val workspace =
+                layout.buildDirectory
+                    .dir("incremental-e2e/dto-change")
+                    .get()
+                    .asFile
+                    .prepareIncrementalWorkspace(file("incremental-fixture"), rootDir.parentFile)
+
+            workspace.runKsp()
+            val generatedMapper = workspace.generatedUserMapper()
+            Assertions.assertFileExists(generatedMapper, "Initial KSP run should generate mapUserDtoToUser.kt")
+
+            val initialContent = generatedMapper.readText()
+            Assertions.assertContains(initialContent, "name = it.name")
+            Assertions.assertNotContains(initialContent, "nickname")
+
+            workspace
+                .resolve("src/main/kotlin/com/example/Network.kt")
+                .writeText(
+                    """
+                    package com.example
+
+                    object Network {
+                        data class UserDto(
+                            val id: String?,
+                            val name: String?,
+                            val email: String?,
+                            val age: Int?,
+                            val nickname: String?,
+                        )
+                    }
+                    """.trimIndent(),
+                )
+            workspace
+                .resolve("src/main/kotlin/com/example/Domain.kt")
+                .writeText(
+                    """
+                    package com.example
+
+                    object Domain {
+                        data class User(
+                            val id: String,
+                            val name: String,
+                            val email: String,
+                            val age: Int,
+                            val nickname: String,
+                        )
+                    }
+                    """.trimIndent(),
+                )
+
+            val result = workspace.runKsp()
+            val kspOutcome = result.task(":kspKotlin")?.outcome
+            Assertions.assertTrue(
+                kspOutcome == TaskOutcome.SUCCESS || kspOutcome == TaskOutcome.UP_TO_DATE,
+                "Expected kspKotlin to succeed after DTO change, was $kspOutcome",
+            )
+
+            val updatedContent = generatedMapper.readText()
+            Assertions.assertContains(updatedContent, "nickname = it.nickname")
+            Assertions.assertNotEquals(initialContent, updatedContent, "Mapper should be regenerated after DTO change")
+        }
+
+        test("unrelated source change leaves generated mapper unchanged on incremental ksp run") {
+            val workspace =
+                layout.buildDirectory
+                    .dir("incremental-e2e/unrelated-change")
+                    .get()
+                    .asFile
+                    .prepareIncrementalWorkspace(file("incremental-fixture"), rootDir.parentFile)
+
+            workspace.runKsp()
+            val generatedMapper = workspace.generatedUserMapper()
+            Assertions.assertFileExists(generatedMapper, "Initial KSP run should generate mapUserDtoToUser.kt")
+
+            val initialContent = generatedMapper.readText()
+            val mainFile = workspace.resolve("src/main/kotlin/com/example/Main.kt")
+            mainFile.writeText(
+                mainFile
+                    .readText()
+                    .replace(
+                        "println(user?.name)",
+                        "println(user?.name) // unrelated comment for incremental test",
+                    ),
+            )
+
+            val result = workspace.runKsp()
+            val kspOutcome = result.task(":kspKotlin")?.outcome
+            Assertions.assertTrue(
+                kspOutcome == TaskOutcome.SUCCESS ||
+                    kspOutcome == TaskOutcome.UP_TO_DATE ||
+                    kspOutcome == TaskOutcome.FROM_CACHE,
+                "Expected kspKotlin to succeed after unrelated change, was $kspOutcome",
+            )
+
+            Assertions.assertContentEquals(
+                initialContent,
+                generatedMapper.readText(),
+                "Unrelated source edits should not regenerate isolating mapper output",
+            )
         }
     }
 }
