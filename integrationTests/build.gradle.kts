@@ -4,6 +4,7 @@ import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.File
+import java.nio.file.Files
 
 private fun File.prepareIncrementalWorkspace(
     fixtureDir: File,
@@ -235,6 +236,12 @@ kspTests {
             Assertions.assertFileExists(generatedMapper, "Initial KSP run should generate mapUserDtoToUser.kt")
 
             val initialContent = generatedMapper.readText()
+            // Regenerating this mapper would rewrite it with byte-identical text, so content alone
+            // cannot detect it. Compare the modification time instead, which the filesystem records
+            // with sub-second precision. Do not stamp the timestamp to widen the gap: backdating the
+            // file makes kspKotlin out-of-date and forces the very rewrite this asserts against.
+            val initialModifiedAt = Files.getLastModifiedTime(generatedMapper.toPath())
+
             val mainFile = workspace.resolve("src/main/kotlin/com/example/Main.kt")
             mainFile.writeText(
                 mainFile
@@ -254,10 +261,15 @@ kspTests {
                 "Expected kspKotlin to succeed after unrelated change, was $kspOutcome",
             )
 
+            Assertions.assertEquals(
+                initialModifiedAt,
+                Files.getLastModifiedTime(generatedMapper.toPath()),
+                "Unrelated source edits should not rewrite isolating mapper output",
+            )
             Assertions.assertContentEquals(
                 initialContent,
                 generatedMapper.readText(),
-                "Unrelated source edits should not regenerate isolating mapper output",
+                "Unrelated source edits should not change isolating mapper output",
             )
         }
     }
