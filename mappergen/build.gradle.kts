@@ -13,10 +13,14 @@ dependencies {
     implementation(kotlin("reflect"))
 }
 
-val codegenJar = project(":codegen").tasks.named<Jar>("jar")
+// Embed codegen classes in this jar (no published codegen artifact).
+// Use source-set output, not zipTree(project.file), so configuration cache can serialize it.
+val codegenMain =
+    project(":codegen")
+        .extensions
+        .getByType<SourceSetContainer>()
+        .named("main")
 
 tasks.named<Jar>("jar") {
-    from(codegenJar.flatMap { it.archiveFile }.map { zipTree(it.asFile) }) {
-        exclude("META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
-    }
+    from(codegenMain.map { it.output })
 }
