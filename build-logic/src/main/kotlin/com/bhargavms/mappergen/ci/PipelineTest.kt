@@ -22,11 +22,16 @@ object PipelineTest {
             dependsOn(":codegen:test", ":codegen:koverVerify")
         }
 
-        // Separate task for integration tests only
+        // Separate task for integration tests only. integrationTests is an included build, so its
+        // tasks are unreachable by project path and have to be referenced through the composite API.
         project.tasks.register("pipelineIntegrationTest") {
             group = "CI"
             description = "Run integration tests (included build)"
-            dependsOn(":integrationTests:runKspTests")
+            dependsOn(
+                project.gradle
+                    .includedBuild("integrationTests")
+                    .task(":runKspTests"),
+            )
         }
 
         // Report generation task
