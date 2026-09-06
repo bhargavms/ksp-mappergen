@@ -40,3 +40,9 @@ jobs:
 
       - name: Run CI Pipeline
         run: ./gradlew pipeline pipelineCoverage
+
+      # Own invocation: runKspTests is not configuration-cache
+      # compatible, so folding it into the pipeline above would
+      # discard that build's configuration cache entry.
+      - name: Run Integration Tests
+        run: ./gradlew pipelineIntegrationTest
