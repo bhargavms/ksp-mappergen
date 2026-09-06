@@ -12,10 +12,11 @@ object PipelineRelease {
             group = "CI"
             description = "Publish Stage: Publish artifacts to Maven repository"
 
-            // Note: Configure actual publishing tasks
-            // dependsOn("publishToSonatype", "closeAndReleaseSonatypeStagingRepository")
             doLast {
-                println("Publishing would happen here (Maven Central, etc.)")
+                println(
+                    "Upload runs from release-please after it creates a tag, " +
+                        "using repository secrets. Not from this task.",
+                )
             }
         }
     }

@@ -1,0 +1,42 @@
+---
+# Opens a Release PR on push to master. When that PR merges,
+# release-please tags the version and this workflow publishes
+# to Maven Central. GITHUB_TOKEN cannot trigger a separate
+# workflow, so publish is a job here.
+#
+# If the Release PR does not get the required `ci` check, add
+# a PAT as RELEASE_PLEASE_TOKEN and allow Actions to create
+# PRs (Settings → Actions → General).
+name: release-please
+
+"on":
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          target-branch: master
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/publish.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit

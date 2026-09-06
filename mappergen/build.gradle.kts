@@ -1,13 +1,22 @@
+import org.gradle.api.tasks.bundling.Jar
+
 plugins {
     id("mappergen.kotlin-library")
+    id("mappergen.publish")
 }
 
-// Publishing coordinates for the main library
-group = "com.bhargavms.mappergen"
-version = "0.1.0-SNAPSHOT"
-
 dependencies {
-    implementation(libs.ksp.api)
+    compileOnly(libs.ksp.api)
     implementation(project(":annotations"))
-    implementation(project(":codegen"))
+    compileOnly(project(":codegen"))
+    implementation(libs.kotlinpoet)
+    implementation(kotlin("reflect"))
+}
+
+val codegenJar = project(":codegen").tasks.named<Jar>("jar")
+
+tasks.named<Jar>("jar") {
+    from(codegenJar.flatMap { it.archiveFile }.map { zipTree(it.asFile) }) {
+        exclude("META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+    }
 }
