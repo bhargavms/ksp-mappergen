@@ -13,6 +13,28 @@ import {
   id = "${var.github_repository}:${var.master_ruleset_id}"
 }
 
+resource "github_repository_environment" "maven_central" {
+  repository  = var.github_repository
+  environment = "maven-central"
+
+  deployment_branch_policy {
+    protected_branches     = false
+    custom_branch_policies = true
+  }
+}
+
+resource "github_repository_environment_deployment_policy" "master" {
+  repository     = var.github_repository
+  environment    = github_repository_environment.maven_central.environment
+  branch_pattern = "master"
+}
+
+resource "github_repository_environment_deployment_policy" "release_tags" {
+  repository     = var.github_repository
+  environment    = github_repository_environment.maven_central.environment
+  tag_pattern    = "v*"
+}
+
 resource "github_repository_ruleset" "master" {
   name        = "master"
   repository  = var.github_repository

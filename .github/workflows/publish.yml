@@ -1,33 +1,35 @@
 ---
-# Maven Central upload. Invoked by release-please after a tag is
-# created, or manually via workflow_dispatch. Not the required
-# `ci` check.
+# Maven Central upload. Invoked by release-please after a tag
+# is created, or manually from master via workflow_dispatch.
 # Secrets: MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD,
 # SIGNING_KEY, SIGNING_PASSWORD
 name: Publish
 
 "on":
   workflow_dispatch:
-    inputs:
-      ref:
-        description: Git ref to publish. Empty = this branch.
-        required: false
-        type: string
   workflow_call:
     inputs:
       ref:
-        description: Git ref to publish (tag or sha)
-        required: false
+        description: Release tag created by release-please
+        required: true
         type: string
+
+permissions:
+  contents: read
 
 jobs:
   publish:
+    if: >
+      github.event_name == 'workflow_call' ||
+      github.ref == 'refs/heads/master'
     runs-on: macos-latest
+    environment: maven-central
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -51,5 +53,5 @@ jobs:
           ORG_GRADLE_PROJECT_RELEASE_SIGNING_ENABLED: "true"
         run: >
           ./gradlew
-          :annotations:publishToMavenCentral
-          :mappergen:publishToMavenCentral
+          :annotations:publishAndReleaseToMavenCentral
+          :mappergen:publishAndReleaseToMavenCentral
