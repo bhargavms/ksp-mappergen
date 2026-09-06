@@ -40,6 +40,8 @@ private fun File.prepareIncrementalWorkspace(
             dependencySubstitution {
                 substitute(module("io.github.bhargavms:mappergen-annotations"))
                     .using(project(":annotations"))
+                substitute(module("io.github.bhargavms:mappergen"))
+                    .using(project(":mappergen"))
             }
         }
         """.trimIndent(),
