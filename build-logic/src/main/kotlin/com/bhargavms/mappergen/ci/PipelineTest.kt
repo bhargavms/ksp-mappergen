@@ -1,6 +1,7 @@
 package com.bhargavms.mappergen.ci
 
 import org.gradle.api.Project
+import org.gradle.api.tasks.Exec
 
 /**
  * Test Stage - Runs all tests and generates reports
@@ -22,15 +23,18 @@ object PipelineTest {
             dependsOn(":codegen:test", ":codegen:koverVerify")
         }
 
-        // Separate task for integration tests only. integrationTests is an included build, so its
-        // tasks are unreachable by project path and have to be referenced through the composite API.
-        project.tasks.register("pipelineIntegrationTest") {
+        // Own Gradle invocation: including this build from the parent skips
+        // includeBuild("..") as a cycle, so mappergen-annotations never
+        // substitutes to :annotations.
+        project.tasks.register("pipelineIntegrationTest", Exec::class.java) {
             group = "CI"
-            description = "Run integration tests (included build)"
-            dependsOn(
-                project.gradle
-                    .includedBuild("integrationTests")
-                    .task(":runKspTests"),
+            description = "Run integration tests as their own build"
+            workingDir = project.rootDir
+            commandLine(
+                project.rootDir.resolve("gradlew").absolutePath,
+                "-p",
+                "integrationTests",
+                "runKspTests",
             )
         }
 

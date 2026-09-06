@@ -8,6 +8,6 @@ kotlin {
 }
 
 dependencies {
-    ksp("com.bhargavms.mappergen:mappergen")
-    compileOnly("com.bhargavms.mappergen:annotations")
+    ksp("io.github.bhargavms:mappergen")
+    compileOnly("io.github.bhargavms:mappergen-annotations")
 }

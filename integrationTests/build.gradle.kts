@@ -36,7 +36,14 @@ private fun File.prepareIncrementalWorkspace(
         }
 
         rootProject.name = "incremental-fixture"
-        includeBuild("$repoPath")
+        includeBuild("$repoPath") {
+            dependencySubstitution {
+                substitute(module("io.github.bhargavms:mappergen-annotations"))
+                    .using(project(":annotations"))
+                substitute(module("io.github.bhargavms:mappergen"))
+                    .using(project(":mappergen"))
+            }
+        }
         """.trimIndent(),
     )
     return this
@@ -82,11 +89,11 @@ tasks.named<KotlinCompile>("compileKotlin") {
 }
 
 dependencies {
-    ksp("com.bhargavms.mappergen:mappergen")
-    compileOnly("com.bhargavms.mappergen:annotations")
-    add("successCompileOnly", "com.bhargavms.mappergen:annotations")
-    add("errorCompileOnly", "com.bhargavms.mappergen:annotations")
-    add("kspError", "com.bhargavms.mappergen:mappergen")
+    ksp("io.github.bhargavms:mappergen")
+    compileOnly("io.github.bhargavms:mappergen-annotations")
+    add("successCompileOnly", "io.github.bhargavms:mappergen-annotations")
+    add("errorCompileOnly", "io.github.bhargavms:mappergen-annotations")
+    add("kspError", "io.github.bhargavms:mappergen")
 }
 
 kspTests {

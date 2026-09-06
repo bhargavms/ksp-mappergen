@@ -13,6 +13,14 @@ build/
 local.properties
 .DS_Store
 
+# Terraform (run locally; do not commit state)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+terraform/crash.log
+terraform/crash.log.*
+
 # Native
 .externalNativeBuild/
 .cxx/

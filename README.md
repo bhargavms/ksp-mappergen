@@ -2,6 +2,8 @@
 
 A **Kotlin Symbol Processing (KSP)** code generator that automatically creates mapper functions to convert between data classes. A Kotlin-native alternative to MapStruct.
 
+**Status:** 0.x is unstable. The annotation API and generated function names may change before 1.0.0.
+
 ## Kotlin Multiplatform Ready
 
 The annotation library is **Kotlin Multiplatform** - use it in any target:
@@ -101,11 +103,11 @@ plugins {
 
 dependencies {
     // For KMP: use commonMain
-    commonMainCompileOnly("com.bhargavms.mappergen:annotations:<version>")
+    commonMainCompileOnly("io.github.bhargavms:mappergen-annotations:0.1.0")
 
     // For JVM-only:
-    compileOnly("com.bhargavms.mappergen:annotations:<version>")
-    ksp("com.bhargavms.mappergen:mappergen:<version>")
+    compileOnly("io.github.bhargavms:mappergen-annotations:0.1.0")
+    ksp("io.github.bhargavms:mappergen:0.1.0")
 }
 ```
 

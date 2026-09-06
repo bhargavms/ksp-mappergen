@@ -6,10 +6,12 @@ junit = "5.11.4"
 kctfork = "0.7.1"
 kover = "0.9.1"
 owasp-dependencycheck = "12.2.0"
+mavenPublish = "0.32.0"
 
 [libraries]
 # Gradle Plugins (for build-logic)
 kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+maven-publish-gradlePlugin = { group = "com.vanniktech", name = "gradle-maven-publish-plugin", version.ref = "mavenPublish" }
 
 # KSP & Code Generation
 ksp-api = { group = "com.google.devtools.ksp", name = "symbol-processing-api", version.ref = "ksp" }
@@ -28,3 +30,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ci-pipelines = { id = "mappergen.ci-pipelines" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 owasp-dependencycheck = { id = "org.owasp.dependencycheck", version.ref = "owasp-dependencycheck" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }

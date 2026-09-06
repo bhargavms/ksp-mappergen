@@ -6,8 +6,16 @@ buildscript {
 
 rootProject.name = "integrationTests"
 
-// Reference the main project to consume its modules
-includeBuild("..")
+// Reference the main project to consume its modules.
+// Published artifactId is mappergen-annotations; project path stays :annotations.
+includeBuild("..") {
+    dependencySubstitution {
+        substitute(module("io.github.bhargavms:mappergen-annotations"))
+            .using(project(":annotations"))
+        substitute(module("io.github.bhargavms:mappergen"))
+            .using(project(":mappergen"))
+    }
+}
 // Make the ksp-test-runner plugin available to this build
 includeBuild("../ksp-test-runner")
 
